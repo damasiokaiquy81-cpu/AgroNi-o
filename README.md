@@ -4,25 +4,25 @@ Plataforma de acompanhamento climático e agrícola, em implementação. Interfa
 
 ## Executar
 
-Requer Node.js 22 ou superior.
+Recomendado Node.js 24. Neste ambiente com proxy, os scripts ativam `NODE_USE_ENV_PROXY=1`, recurso do Node 24.
 
 ```sh
 npm ci
 npm run dev
 ```
 
-A aplicação escuta na porta 3000. `npm run build` gera a distribuição e `npm start` inicia a versão de produção. `npm test` executa os testes do motor de chuva; `npm run typecheck` verifica os tipos.
+A aplicação escuta na porta 3000. `npm run build` gera a distribuição e `npm start` inicia a versão de produção. `npm test` executa os testes de chuva, calor e validação das fontes; `npm run typecheck` verifica os tipos.
 
 ## O que funciona nesta versão
 
-- Dashboard, navegação, seleção entre quatro localidades de referência e seis culturas.
+- Dashboard, navegação, seleção entre quatro localidades de referência. Culturas são configuradas nas propriedades e nas regras.
 - Mapa Leaflet com limites municipais reais de referência, destaque do município selecionado e navegação animada. A camada local funciona sem acesso a serviços externos; a camada opcional de ruas usa OpenStreetMap. Sem camada de risco fabricada.
-- Cadastro de propriedades, edição e ativação de regras de chuva, histórico de alertas e consentimento sandbox em localStorage.
-- Simulação de acumulado de chuva, deduplicação por regra/município/dia e prévia WhatsApp sem envio.
-- Consulta meteorológica no servidor via `GET /api/weather?lat=...&lon=...`, cache de 30 minutos, timeout, coordenadas validadas e erros explícitos. A página de previsão permite solicitar dados reais.
+- Cadastro de propriedades, edição e ativação de regras de chuva e calor com responsável, registro opcional e histórico de alterações; histórico de alertas e consentimento sandbox em localStorage.
+- Simulação de chuva acumulada ou temperatura máxima, deduplicação por regra/município/dia e prévia WhatsApp sem envio.
+- Consulta meteorológica no servidor via `GET /api/weather?lat=...&lon=...`, cache de 30 minutos, timeout, coordenadas validadas e erros explícitos. A previsão real é consultada automaticamente ao abrir o painel ou mudar de município; a fonte e o momento da consulta aparecem na tela.
 - Catálogo IBGE no servidor via `GET /api/municipalities?uf=MT`, cache de 24 horas. A seleção visual ainda usa quatro localidades fixas; não confundir com catálogo nacional integrado.
 
-Os cards ENSO e previsão inicial são fictícios e identificados como demonstração. Nenhum boletim atual da NOAA foi importado. Os links das instituições são fontes de referência, não integrações de ingestão ativas. O armazenamento do navegador não é um banco compartilhado nem autenticação; não cadastre dados sensíveis.
+A previsão usa dados reais quando a consulta tem sucesso; em falhas, o cenário demonstrativo é identificado. Os cards ENSO não exibem fase ativa ou probabilidades sem verificação. Nenhum boletim atual da NOAA foi importado. Os links das instituições são fontes de referência, não integrações de ingestão ativas. O armazenamento do navegador não é um banco compartilhado nem autenticação; não cadastre dados sensíveis.
 
 ## Infraestrutura inicial, ainda não integrada à interface
 
@@ -39,7 +39,7 @@ O worker agenda somente um heartbeat sandbox a cada hora, com retentativas e enc
 
 ## Rede e credenciais
 
-Interface sem credenciais. Open-Meteo: `api.open-meteo.com`; IBGE: `servicodados.ibge.gov.br`; mapa: `*.tile.openstreetmap.org`; fontes: `fonts.googleapis.com`, `fonts.gstatic.com`; geração Prisma: `binaries.prisma.sh`. Preserve TLS e checksums. Os endpoints meteorológico e IBGE dependem de liberação de rede neste ambiente.
+Interface sem credenciais. Open-Meteo: `api.open-meteo.com`; IBGE: `servicodados.ibge.gov.br`; mapa: `*.tile.openstreetmap.org`; fontes: `fonts.googleapis.com`, `fonts.gstatic.com`; geração Prisma: `binaries.prisma.sh`. Preserve TLS e checksums. A Open-Meteo foi validada com dados reais neste ambiente. IBGE apresentou falha TLS no caminho de saída; NOAA precisa de liberação de rede. Veja o painel Integrações e [instruções de conexão](docs/CONNECTIONS.md).
 
 WhatsApp real ainda não implementado. A etapa futura exigirá aplicativo Meta, número habilitado, templates aprovados, credenciais somente no servidor, webhook verificado, consentimento persistido e cancelamento. Não informe tokens no chat ou em commits.
 
@@ -58,6 +58,6 @@ Se já houver Chromium no sistema, use `CHROMIUM_PATH=/usr/bin/chromium npm run 
 
 ## Interface e cartografia
 
-O módulo de economia e preços foi removido do escopo. O dashboard apresenta um panorama de precipitação com gráfico animado. Animações respeitam a preferência de movimento reduzido do sistema.
+O módulo de economia e preços foi removido do escopo. O dashboard usa paleta vermelha/carvão, cenário climático ilustrativo em perspectiva 3D e panorama de precipitação com gráfico animado. O som ambiente de chuva é sintetizado no navegador, vem desligado e só começa após um clique. Não representa a chuva real na região. Animações respeitam a preferência de movimento reduzido do sistema.
 
-O mapa abre em Sorriso/MT como exemplo e acompanha a seleção de município. A cor verde indica a seleção geográfica, nunca risco climático. A camada Território inclui geometrias IBGE distribuídas por Geodata BR (CC0), com fonte e limitações em `public/maps/SOURCES.md`. A data de atualização dos limites não é garantida. A camada Ruas depende da disponibilidade e das políticas de acesso do OpenStreetMap.
+O mapa abre em Sorriso/MT como exemplo e acompanha a seleção de município. A cor de destaque indica a seleção geográfica, nunca risco climático. A camada Território inclui geometrias IBGE distribuídas por Geodata BR (CC0), com fonte e limitações em `public/maps/SOURCES.md`. A data de atualização dos limites não é garantida. A camada Ruas depende da disponibilidade e das políticas de acesso do OpenStreetMap.

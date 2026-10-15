@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./storm.css";
+import "./rules.css";
 export const metadata: Metadata = {
   title: "AgroNiño • Inteligência para o seu campo",
   description:

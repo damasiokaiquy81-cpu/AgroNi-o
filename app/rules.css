@@ -1,0 +1,136 @@
+.rule-metric-summary {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid #58516b;
+  border-radius: 10px;
+  background: #302535;
+  padding: 14px;
+  color: #dac3d0;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.rule-metric-summary.heat {
+  color: #ffcca1;
+  border-color: #77472e;
+  background: #432821;
+}
+.field-help {
+  font-size: 10px !important;
+  margin-top: 0 !important;
+  line-height: 1.6;
+  color: #a6959d !important;
+}
+.editor-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid #49353e;
+  padding-top: 18px;
+  color: #dfb9bc;
+  font-size: 11px;
+  margin: 18px 0;
+}
+.rule-author {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: #d5a1a8;
+  font-size: 10px;
+  margin: 9px 0 4px;
+}
+.rule-row .risk-icon.heat {
+  background: #4c291f;
+  color: #ffac74;
+  border-color: #79503b;
+}
+.rule-row .risk-icon.rain {
+  background: #3a2538;
+  color: #e9a8bd;
+  border-color: #634253;
+}
+.audit-timeline {
+  list-style: none;
+  padding: 0;
+  margin: 22px 0 0;
+}
+.audit-timeline li {
+  position: relative;
+  border-left: 1px solid #76464c;
+  margin-left: 4px;
+  padding: 0 0 20px 20px;
+}
+.audit-timeline li:before {
+  content: "";
+  position: absolute;
+  left: -4px;
+  top: 4px;
+  background: #ef7b82;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.audit-timeline small {
+  display: block;
+  color: #ac8d94;
+  margin-top: 5px;
+}
+.audit-timeline p {
+  margin: 8px 0 0;
+  font-size: 11px;
+}
+.rule-row > div:nth-child(2) {
+  min-width: 0;
+}
+.rule-row .icon-button {
+  flex-shrink: 0;
+}
+.rule-row small {
+  line-height: 1.6;
+}
+.rule-editor .checkbox {
+  font-size: 12px;
+}
+.rule-editor > p.source {
+  font-size: 9px;
+}
+.rule-row h3 {
+  font-size: 15px;
+}
+.rules-intro {
+  display: flex;
+  gap: 15px;
+  margin: 12px 0 24px;
+}
+.rules-intro > div {
+  flex: 1;
+  border: 1px solid #583d43;
+  border-radius: 10px;
+  padding: 18px;
+}
+.rules-intro p {
+  font-size: 11px;
+  color: #bba3ac;
+}
+.rules-intro svg {
+  color: #f1a4a0;
+  margin-bottom: 8px;
+}
+@media (max-width: 720px) {
+  .rule-row {
+    gap: 11px;
+  }
+  .rule-author {
+    flex-wrap: wrap;
+    line-height: 1.5;
+  }
+  .rules-intro {
+    display: block;
+  }
+  .rules-intro > div {
+    margin-bottom: 10px;
+  }
+  .rule-row .source {
+    font-size: 9px;
+  }
+}

@@ -12,8 +12,8 @@
 ## Fases
 
 1. **Estrutura e interface — implementada parcialmente:** dashboard responsivo, gráficos, mapa, navegação e formulários funcionais no navegador. Autenticação e ligação do banco ainda pendentes. Componentes próprios em CSS; Tailwind e shadcn não foram adotados nesta base.
-2. **Meteorologia — parcial:** adaptadores HTTP Open-Meteo e IBGE implementados, validação e erros testados. Catálogo nacional na UI, horários detalhados, cache persistente e ingestão ENSO oficial pendentes. Conectividade real bloqueada no ambiente inicial.
-3. **Agrônomos — demonstração:** regras de chuva, simulação e persistência local. Falta autorização profissional, fases de cultura na regra, demais riscos, auditoria e persistência no servidor.
+2. **Meteorologia — parcial:** adaptadores HTTP Open-Meteo e IBGE implementados, validação e erros testados. Catálogo nacional na UI, horários detalhados, cache persistente e ingestão ENSO oficial pendentes. Open-Meteo conectada e validada com proxy; IBGE e NOAA indisponíveis nesta rede, com erros tratados.
+3. **Agrônomos — demonstração:** regras de chuva e calor, autoria informada, registro opcional, histórico de revisões e persistência local. Falta autenticação profissional, fases de cultura na regra, demais riscos, auditoria e persistência no servidor.
 4. **Avisos oficiais — pendente:** verificar documentação pública, licença, cobertura e cadência de cada fonte. Sem scraping ou avisos inventados. Adicionar cadastro de avisos manuais verificados quando API não existir.
 5. **WhatsApp — somente prévia sandbox:** falta integração oficial Meta, destinatários, consentimentos persistidos, templates, outbox idempotente, status de entrega, assinatura de webhooks e cancelamento.
 6. **Economia — removida do escopo** por decisão do produto. Não implementar preços, cotações ou análise de mercado.

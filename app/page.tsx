@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import dynamic from "next/dynamic";
 import {
   Sprout,
@@ -28,6 +28,9 @@ import {
   FlaskConical,
   Activity,
   Users,
+  Thermometer,
+  History,
+  Plug,
 } from "lucide-react";
 import {
   AreaChart,
@@ -39,7 +42,20 @@ import {
 } from "recharts";
 import { useReducedMotion } from "@/lib/useReducedMotion";
 import ClimateOverview from "@/components/ClimateOverview";
-import { evaluateRain, type Rule } from "@/lib/rules";
+import {
+  evaluateCondition,
+  eventKey,
+  normalizeRule,
+  riskTypes,
+  ruleSchema,
+  saveRuleRevision,
+  type Rule,
+} from "@/lib/rules";
+import type { WeatherResponse } from "@/lib/integrations/publicSources";
+import RuleEditor from "@/components/RuleEditor";
+import ClimateHero from "@/components/ClimateHero";
+import RainAudio from "@/components/RainAudio";
+import IntegrationsPanel from "@/components/IntegrationsPanel";
 const RegionMap = dynamic(() => import("@/components/RegionMap"), {
   ssr: false,
   loading: () => <div className="map-loading">Carregando mapa…</div>,
@@ -57,7 +73,7 @@ const nav = [
   { label: "Alertas e riscos", icon: Bell },
   { label: "Atualizações", icon: Newspaper },
 ];
-const initialRule: Rule = {
+const initialRule: Rule = ruleSchema.parse({
   id: "rain-1",
   name: "Chuva excessiva",
   city: "Sorriso",
@@ -67,7 +83,20 @@ const initialRule: Rule = {
   guidance:
     "Verificar a drenagem da lavoura e evitar operações com máquinas em solo encharcado.",
   active: true,
-};
+  kind: "rain",
+});
+const heatRule: Rule = ruleSchema.parse({
+  ...initialRule,
+  id: "heat-1",
+  kind: "heat",
+  name: "Calor intenso",
+  threshold: 35,
+  hours: 24,
+  crop: "Todas as culturas",
+  guidance:
+    "Acompanhe a disponibilidade hídrica e consulte o agrônomo antes de alterar o manejo. Evite atividades de campo nos horários de maior calor.",
+});
+const initialRules = [initialRule, heatRule];
 const forecast = [
   {
     day: "Hoje",
@@ -113,23 +142,31 @@ type Alert = {
   title: string;
   date: string;
   guidance: string;
-  mm: number;
+  value: number;
+  unit: string;
+  hours: number;
+  kind: "rain" | "heat";
+  city: string;
+  crop: string;
+  agronomist: string;
+  ruleName: string;
 };
 export default function Home() {
   const reducedMotion = useReducedMotion();
   const [page, setPage] = useState("Visão geral"),
     [cityIdx, setCityIdx] = useState(0),
-    [crop, setCrop] = useState("Soja"),
     [mobile, setMobile] = useState(false),
     [modal, setModal] = useState<string | null>(null),
     [toast, setToast] = useState(""),
-    [rules, setRules] = useState<Rule[]>([initialRule]),
+    [rules, setRules] = useState<Rule[]>(initialRules),
     [farms, setFarms] = useState<Farm[]>([]),
     [alerts, setAlerts] = useState<Alert[]>([]),
     [ready, setReady] = useState(false),
-    [live, setLive] = useState<any>(null),
+    [live, setLive] = useState<WeatherResponse | null>(null),
     [weatherState, setWeatherState] = useState("demo"),
     [simulation, setSimulation] = useState(85),
+    [simulationRuleId, setSimulationRuleId] = useState("rain-1"),
+    [previewAlert, setPreviewAlert] = useState<Alert | null>(null),
     [form, setForm] = useState(initialRule),
     [farmForm, setFarmForm] = useState({
       name: "",
@@ -140,13 +177,43 @@ export default function Home() {
     [consent, setConsent] = useState(false),
     [notification, setNotification] = useState(false);
   const city = cities[cityIdx];
+  const requestRef = useRef<AbortController | null>(null);
+  const activeRules = rules.filter((r) => r.active && r.city === city.name);
+  const simulationRule =
+    activeRules.find((r) => r.id === simulationRuleId) || activeRules[0];
   useEffect(() => {
     try {
       const d = JSON.parse(localStorage.getItem("agronino-demo") || "null");
       if (d) {
-        setRules(d.rules || [initialRule]);
+        if (Array.isArray(d.rules))
+          setRules(
+            d.rules
+              .map(normalizeRule)
+              .filter((r: Rule | null): r is Rule => r !== null),
+          );
         setFarms(d.farms || []);
-        setAlerts(d.alerts || []);
+        if (Array.isArray(d.alerts))
+          setAlerts(
+            d.alerts
+              .filter((a: any) => a && typeof a.title === "string")
+              .map((a: any) => ({
+                ...a,
+                value: a.value ?? a.mm ?? 0,
+                unit: a.unit || "mm",
+                hours: a.hours || 48,
+                kind: a.kind || "rain",
+                city: a.city || "Sorriso",
+                crop: a.crop || "Soja",
+                agronomist: a.agronomist || "Equipe de demonstração",
+                ruleName: a.ruleName || "Chuva excessiva",
+              })),
+          );
+        if (
+          Number.isInteger(d.cityIdx) &&
+          d.cityIdx >= 0 &&
+          d.cityIdx < cities.length
+        )
+          setCityIdx(d.cityIdx);
         setConsent(!!d.consent);
       }
     } catch {}
@@ -156,68 +223,100 @@ export default function Home() {
     if (ready)
       localStorage.setItem(
         "agronino-demo",
-        JSON.stringify({ rules, farms, alerts, consent }),
+        JSON.stringify({ rules, farms, alerts, consent, cityIdx }),
       );
-  }, [rules, farms, alerts, consent, ready]);
+  }, [rules, farms, alerts, consent, cityIdx, ready]);
   useEffect(() => {
     if (toast) {
       const t = setTimeout(() => setToast(""), 4000);
       return () => clearTimeout(t);
     }
   }, [toast]);
+  useEffect(() => {
+    if (modal === "simulate")
+      setSimulation(simulationRule?.kind === "heat" ? 40 : 85);
+  }, [modal, simulationRule?.id]);
   function go(p: string) {
     setPage(p);
     setMobile(false);
   }
-  async function loadWeather() {
+  const loadWeather = useCallback(async () => {
+    requestRef.current?.abort();
+    const controller = new AbortController();
+    requestRef.current = controller;
     setWeatherState("loading");
+    setLive(null);
     try {
-      const r = await fetch(`/api/weather?lat=${city.lat}&lon=${city.lon}`);
+      const r = await fetch(`/api/weather?lat=${city.lat}&lon=${city.lon}`, {
+        signal: controller.signal,
+      });
       const d = await r.json();
-      if (!r.ok) throw Error(d.error);
-      setLive(d);
-      setWeatherState("live");
-      setToast("Previsão atualizada com dados da Open-Meteo");
+      if (!r.ok) throw Error();
+      if (!controller.signal.aborted) {
+        setLive(d);
+        setWeatherState("live");
+      }
     } catch {
-      setWeatherState("error");
-      setLive(null);
+      if (!controller.signal.aborted) {
+        setWeatherState("error");
+        setLive(null);
+      }
     }
-  }
+  }, [city.lat, city.lon]);
+  useEffect(() => {
+    if (ready) void loadWeather();
+    return () => requestRef.current?.abort();
+  }, [ready, loadWeather]);
   function simulate() {
-    const rule = rules.find(
-      (r) => r.active && r.city === city.name && r.crop === crop,
-    );
+    const rule = simulationRule;
     if (!rule) {
+      setToast("Cadastre uma regra ativa para este município.");
+      return;
+    }
+    const unit = riskTypes[rule.kind].unit;
+    if (
+      !Number.isFinite(simulation) ||
+      simulation < 0 ||
+      simulation > (rule.kind === "heat" ? 65 : 3000)
+    ) {
+      setToast("Informe um valor válido para a simulação.");
+      return;
+    }
+    if (!evaluateCondition(rule, simulation)) {
       setToast(
-        "Crie uma regra ativa para o município e a cultura selecionados.",
+        `Condição não atingida: ${simulation} ${unit} abaixo do limite de ${rule.threshold} ${unit}.`,
       );
       return;
     }
-    if (!evaluateRain(rule, [simulation])) {
-      setToast(
-        `Condição não atingida: ${simulation} mm abaixo do limite de ${rule.threshold} mm.`,
-      );
-      return;
-    }
-    const id = `${rule.id}:${city.name}:${new Date().toISOString().slice(0, 10)}`;
+    const id = eventKey(
+      rule.id,
+      rule.city,
+      new Date().toISOString().slice(0, 10),
+    );
     if (alerts.some((a) => a.id === id)) {
       setToast(
         "Alerta já registrado para esta regra e período. Duplicata evitada.",
       );
       return;
     }
-    setAlerts((a) => [
-      {
-        id,
-        title: `Chuva excessiva em ${city.name}`,
-        date: new Date().toLocaleString("pt-BR"),
-        guidance: rule.guidance,
-        mm: simulation,
-      },
-      ...a,
-    ]);
-    setToast("Alerta de demonstração gerado. Nenhuma mensagem foi enviada.");
+    const alert: Alert = {
+      id,
+      title: `${rule.name} em ${rule.city}`,
+      date: new Date().toLocaleString("pt-BR"),
+      guidance: rule.guidance,
+      value: simulation,
+      unit,
+      hours: rule.hours,
+      kind: rule.kind,
+      city: rule.city,
+      crop: rule.crop,
+      agronomist: rule.agronomist,
+      ruleName: rule.name,
+    };
+    setAlerts((a) => [alert, ...a]);
+    setPreviewAlert(alert);
     setModal("whatsapp");
+    setToast("Alerta de demonstração gerado. Nenhuma mensagem foi enviada.");
   }
   const days =
     weatherState === "live" && live
@@ -306,8 +405,8 @@ export default function Home() {
           ))}
         </div>
         <div className="source">
-          {weatherState === "live"
-            ? `Open-Meteo · Consulta: ${new Date(live.retrievedAt).toLocaleString("pt-BR")} · ${live.data.timezone}`
+          {weatherState === "live" && live
+            ? `Open-Meteo · Consulta: ${new Date(live.retrievedAt).toLocaleString("pt-BR", { timeZone: live.data.timezone })} · ${live.data.timezone}`
             : "Cenário ilustrativo · não utilizar para decisões no campo"}
           {weatherState === "loading" && " · Consultando…"}
         </div>
@@ -344,7 +443,7 @@ export default function Home() {
             <h2>{kind}</h2>
           </div>
           <span className={"status " + (el ? "red" : "neutral")}>
-            {el ? "Ativo • forte" : "Não ativo"}
+            {el ? "Não verificado" : "Não verificado"}
           </span>
         </div>
         <p>
@@ -356,22 +455,21 @@ export default function Home() {
           {el
             ? "Probabilidade de continuidade"
             : "Probabilidade de desenvolvimento"}
-          <span>Trimestre ilustrativo</span>
+          <span>Sem boletim verificado</span>
         </div>
         <div className="prob">
           <b>
-            {el ? "75" : "15"}
-            <span>%</span>
+            —<span> %</span>
           </b>
           <div className="progress">
-            <i style={{ width: el ? "75%" : "15%" }} />
+            <i style={{ width: "0%" }} />
           </div>
         </div>
         <p className="trend">
           <strong>Tendência:</strong>{" "}
           {el
-            ? "Manutenção do fenômeno no cenário demonstrativo."
-            : "Baixa probabilidade no cenário demonstrativo."}
+            ? "Consulte o boletim oficial para a classificação atual."
+            : "Probabilidade atual ainda não verificada."}
         </p>
         <button
           className="outline"
@@ -383,7 +481,7 @@ export default function Home() {
           <ArrowRight size={15} />
         </button>
         <div className="source">
-          Exemplo de interface · não representa classificação atual da NOAA
+          Fonte de referência: NOAA/CPC · classificação atual não confirmada
         </div>
       </section>
     );
@@ -422,6 +520,7 @@ export default function Home() {
           {[
             { label: "Minhas propriedades", icon: Tractor },
             { label: "Painel do agrônomo", icon: Users },
+            { label: "Integrações", icon: Plug },
             { label: "Configurações", icon: Settings },
           ].map((n) => (
             <button
@@ -448,7 +547,9 @@ export default function Home() {
             <strong>CONAB</strong>
             <span>IBGE</span>
           </div>
-          <small>Integrações em preparação</small>
+          <button className="text-button" onClick={() => go("Integrações")}>
+            Ver conexões <ArrowRight size={12} />
+          </button>
         </div>
         <div className="sidebar-bottom">
           <span className="online-dot" /> Ambiente de demonstração
@@ -485,22 +586,9 @@ export default function Home() {
                 <ChevronDown size={14} />
               </div>
             </label>
-            <label>
-              Minha cultura
-              <div className="select-wrap">
-                <Sprout size={17} className="green" />
-                <select value={crop} onChange={(e) => setCrop(e.target.value)}>
-                  {["Soja", "Milho", "Café", "Feijão", "Arroz", "Pastagem"].map(
-                    (c) => (
-                      <option key={c}>{c}</option>
-                    ),
-                  )}
-                </select>
-                <ChevronDown size={14} />
-              </div>
-            </label>
           </div>
           <div className="header-user">
+            <RainAudio />
             <button
               className="notification icon-button"
               onClick={() => setNotification(!notification)}
@@ -569,6 +657,11 @@ export default function Home() {
           </div>
           {page === "Visão geral" && (
             <div className="dashboard-content">
+              <ClimateHero
+                city={city.name}
+                onWeather={() => go("Previsão do tempo")}
+                onAlerts={() => go("Alertas e riscos")}
+              />
               <div className="enso-grid">
                 {enso("El Niño")}
                 {enso("La Niña")}
@@ -785,7 +878,8 @@ export default function Home() {
                   <h3>Boletim atual ainda não conectado</h3>
                   <p>
                     A classificação, intensidade e probabilidades atuais não
-                    foram verificadas. Os cards acima são uma simulação visual.
+                    foram verificadas. Os cards acima não exibem probabilidades
+                    sem confirmação da fonte.
                   </p>
                   <a
                     className="primary"
@@ -840,13 +934,19 @@ export default function Home() {
                         </span>
                         <h3>{a.title}</h3>
                         <p>
-                          {a.mm} mm simulados · {a.date}
+                          {a.value} {a.unit} simulados · {a.date}
                         </p>
                         <p>{a.guidance}</p>
+                        <small className="rule-author">
+                          Responsável informado: {a.agronomist} · {a.crop}
+                        </small>
                       </div>
                       <button
                         className="outline"
-                        onClick={() => setModal("whatsapp")}
+                        onClick={() => {
+                          setPreviewAlert(a);
+                          setModal("whatsapp");
+                        }}
                       >
                         Prévia <ArrowRight size={14} />
                       </button>
@@ -938,7 +1038,13 @@ export default function Home() {
                         ...initialRule,
                         id: crypto.randomUUID(),
                         city: city.name,
-                        crop,
+                        crop:
+                          farms.find((f) => f.city === city.name)?.crop ||
+                          "Todas as culturas",
+                        agronomist: "",
+                        createdAt: "",
+                        createdBy: "",
+                        history: [],
                       });
                       setModal("rule");
                     }}
@@ -947,20 +1053,31 @@ export default function Home() {
                   </button>
                 </div>
                 <p className="muted">
-                  Limites definidos pelo profissional para cada região e
-                  cultura.
+                  Regras de chuva e calor por região e cultura. Nome do
+                  responsável e histórico são informados localmente, sem
+                  autenticação profissional.
                 </p>
                 {rules.map((r) => (
                   <div className="rule-row" key={r.id}>
-                    <div className="risk-icon">
-                      <CloudRain />
+                    <div className={"risk-icon " + r.kind}>
+                      {r.kind === "heat" ? <Thermometer /> : <CloudRain />}
                     </div>
                     <div>
                       <h3>{r.name}</h3>
                       <p>
-                        {r.city} · {r.crop} · ≥ {r.threshold} mm em {r.hours}h
+                        {r.city} · {r.crop} · ≥ {r.threshold}{" "}
+                        {riskTypes[r.kind].unit} em {r.hours}h
                       </p>
                       <small>{r.guidance}</small>
+                      <div className="rule-author">
+                        <Users size={12} /> {r.agronomist}
+                        {r.registration && ` · ${r.registration}`}
+                      </div>
+                      <span className="source">
+                        {r.updatedAt
+                          ? `Atualizada em ${new Date(r.updatedAt).toLocaleString("pt-BR")}`
+                          : "Regra de exemplo · validar limite com profissional"}
+                      </span>
                     </div>
                     <button
                       className={"toggle " + (r.active ? "on" : "")}
@@ -968,7 +1085,23 @@ export default function Home() {
                       onClick={() =>
                         setRules((rs) =>
                           rs.map((x) =>
-                            x.id === r.id ? { ...x, active: !x.active } : x,
+                            x.id === r.id
+                              ? {
+                                  ...x,
+                                  active: !x.active,
+                                  updatedAt: new Date().toISOString(),
+                                  history: [
+                                    ...x.history,
+                                    {
+                                      at: new Date().toISOString(),
+                                      by: "Operador local (sem autenticação)",
+                                      action: x.active
+                                        ? "Desativou a regra."
+                                        : "Ativou a regra.",
+                                    },
+                                  ],
+                                }
+                              : x,
                           ),
                         )
                       }
@@ -984,25 +1117,35 @@ export default function Home() {
                     >
                       Editar
                     </button>
+                    <button
+                      className="icon-button"
+                      aria-label={`Histórico de ${r.name}`}
+                      onClick={() => {
+                        setForm(r);
+                        setModal("history");
+                      }}
+                    >
+                      <History size={17} />
+                    </button>
                   </div>
                 ))}
               </section>
               <section className="panel detail-panel">
-                <h3>Motor de automação</h3>
+                <h3>Como o alerta é preparado</h3>
                 <div className="flow">
                   <div>
                     <CloudSun />
-                    Fontes oficiais<small>Adaptadores</small>
+                    Fontes climáticas<small>Dados com origem</small>
                   </div>
                   <ArrowRight />
                   <div>
                     <Activity />
-                    Worker Node.js<small>BullMQ + Redis</small>
+                    Leitura do clima<small>Previsão disponível</small>
                   </div>
                   <ArrowRight />
                   <div>
                     <SlidersHorizontal />
-                    Regras agronômicas<small>Avaliação e deduplicação</small>
+                    Regras do agrônomo<small>Limites e orientações</small>
                   </div>
                   <ArrowRight />
                   <div>
@@ -1011,8 +1154,8 @@ export default function Home() {
                   </div>
                 </div>
                 <p className="source">
-                  Infraestrutura inicial preparada no repositório. Este painel
-                  não indica execução de jobs de produção.
+                  Teste chuva ou calor para conferir a condição e a orientação
+                  antes de habilitar notificações reais.
                 </p>
                 <button
                   className="outline"
@@ -1075,6 +1218,7 @@ export default function Home() {
               </div>
             </section>
           )}
+          {page === "Integrações" && <IntegrationsPanel city={city} />}
           {page === "Configurações" && (
             <section className="panel detail-panel settings">
               <h3>Preferências de demonstração</h3>
@@ -1257,141 +1401,114 @@ export default function Home() {
               </form>
             )}
             {modal === "rule" && (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
+              <RuleEditor
+                value={form}
+                cities={cities.map((c) => c.name)}
+                onSave={(value) => {
+                  const revision = saveRuleRevision(
+                    value,
+                    rules.find((r) => r.id === value.id),
+                  );
                   setRules((rs) =>
-                    rs.some((r) => r.id === form.id)
-                      ? rs.map((r) => (r.id === form.id ? form : r))
-                      : [...rs, form],
+                    rs.some((r) => r.id === revision.id)
+                      ? rs.map((r) => (r.id === revision.id ? revision : r))
+                      : [...rs, revision],
                   );
                   setModal(null);
-                  setToast("Regra demonstrativa salva");
+                  setToast("Regra salva com responsável e histórico.");
                 }}
-              >
-                <div className="eyebrow">PAINEL DO AGRÔNOMO</div>
-                <h2>
-                  {rules.some((r) => r.id === form.id)
-                    ? "Editar regra"
-                    : "Nova regra de alerta"}
-                </h2>
-                <label>
-                  Tipo de risco
-                  <select
-                    value={form.name}
-                    onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  >
-                    <option>Chuva excessiva</option>
-                  </select>
-                </label>
-                <div className="form-grid">
-                  <label>
-                    Município
-                    <select
-                      value={form.city}
-                      onChange={(e) =>
-                        setForm({ ...form, city: e.target.value })
-                      }
-                    >
-                      {cities.map((c) => (
-                        <option key={c.name}>{c.name}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Cultura
-                    <select
-                      value={form.crop}
-                      onChange={(e) =>
-                        setForm({ ...form, crop: e.target.value })
-                      }
-                    >
-                      {[
-                        "Soja",
-                        "Milho",
-                        "Café",
-                        "Feijão",
-                        "Arroz",
-                        "Pastagem",
-                      ].map((x) => (
-                        <option key={x}>{x}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Chuva acumulada (mm)
-                    <input
-                      type="number"
-                      required
-                      min="1"
-                      max="3000"
-                      value={form.threshold}
-                      onChange={(e) =>
-                        setForm({ ...form, threshold: +e.target.value })
-                      }
-                    />
-                  </label>
-                  <label>
-                    Período (horas)
-                    <input
-                      type="number"
-                      required
-                      min="1"
-                      max="384"
-                      value={form.hours}
-                      onChange={(e) =>
-                        setForm({ ...form, hours: +e.target.value })
-                      }
-                    />
-                  </label>
-                </div>
-                <label>
-                  Orientação preventiva
-                  <textarea
-                    required
-                    minLength={10}
-                    value={form.guidance}
-                    onChange={(e) =>
-                      setForm({ ...form, guidance: e.target.value })
-                    }
-                  />
-                </label>
-                <p className="source">
-                  Regra de demonstração. Uso real exige validação de
-                  profissional autorizado.
+              />
+            )}
+            {modal === "history" && (
+              <>
+                <div className="eyebrow">RASTREABILIDADE LOCAL</div>
+                <h2>Histórico de {form.name}</h2>
+                <p>
+                  Responsável informado: {form.agronomist}. Identidade não
+                  verificada.
                 </p>
-                <button className="primary" type="submit">
-                  Salvar regra <Check size={15} />
-                </button>
-              </form>
+                {form.history.length ? (
+                  <ol className="audit-timeline">
+                    {form.history.map((h, i) => (
+                      <li key={i}>
+                        <strong>{h.by}</strong>
+                        <small>{new Date(h.at).toLocaleString("pt-BR")}</small>
+                        <p>{h.action}</p>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p>Regra de exemplo. Nenhuma alteração registrada.</p>
+                )}
+              </>
             )}
             {modal === "simulate" && (
               <>
                 <FlaskConical className="green" />
-                <h2>Simular chuva excessiva</h2>
+                <h2>Simular condição climática</h2>
                 <p>
-                  Teste as regras ativas para {crop} em {city.name}. Os valores
-                  são fictícios e não geram envios.
+                  Escolha uma regra de {city.name}. Os dados são fictícios e
+                  nenhum alerta real será enviado.
                 </p>
-                <label>
-                  Acumulado simulado (mm)
-                  <input
-                    type="number"
-                    min="0"
-                    max="2000"
-                    value={simulation}
-                    onChange={(e) =>
-                      setSimulation(Math.max(0, +e.target.value))
-                    }
-                  />
-                </label>
-                <p className="source">
-                  A repetição da mesma regra no mesmo dia não cria alertas
-                  duplicados.
-                </p>
-                <button className="primary" onClick={simulate}>
-                  Executar simulação <ArrowRight size={15} />
-                </button>
+                {activeRules.length ? (
+                  <>
+                    <label>
+                      Regra a testar
+                      <select
+                        value={simulationRule?.id || ""}
+                        onChange={(e) => {
+                          setSimulationRuleId(e.target.value);
+                          const r = rules.find((x) => x.id === e.target.value);
+                          setSimulation(r?.kind === "heat" ? 40 : 85);
+                        }}
+                      >
+                        {activeRules.map((r) => (
+                          <option key={r.id} value={r.id}>
+                            {r.name} · {r.crop} · {r.agronomist}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      {simulationRule?.kind === "heat"
+                        ? "Temperatura máxima simulada (°C)"
+                        : "Acumulado simulado (mm)"}
+                      <input
+                        type="number"
+                        min="0"
+                        max={simulationRule?.kind === "heat" ? 65 : 3000}
+                        step="0.1"
+                        value={simulation}
+                        onChange={(e) =>
+                          setSimulation(Math.max(0, +e.target.value))
+                        }
+                      />
+                    </label>
+                    <p className="source">
+                      Limite: {simulationRule?.threshold}{" "}
+                      {simulationRule && riskTypes[simulationRule.kind].unit} em{" "}
+                      {simulationRule?.hours}h. Cultura atendida:{" "}
+                      {simulationRule?.crop}. A repetição da mesma regra no
+                      mesmo dia não cria duplicatas.
+                    </p>
+                    <button className="primary" onClick={simulate}>
+                      Executar simulação <ArrowRight size={15} />
+                    </button>
+                  </>
+                ) : (
+                  <div className="empty-state">
+                    <p>Não há regras ativas para este município.</p>
+                    <button
+                      className="primary"
+                      onClick={() => {
+                        setModal(null);
+                        go("Painel do agrônomo");
+                      }}
+                    >
+                      Configurar regra
+                    </button>
+                  </div>
+                )}
               </>
             )}
             {modal === "whatsapp" && (
@@ -1412,17 +1529,25 @@ export default function Home() {
                   </div>
                   <div className="wa-bubble">
                     <b>🌱 AgroNiño — Alerta preventivo</b>
+                    <p>📍 {previewAlert?.city || city.name}</p>
                     <p>
-                      📍 {city.name} – {city.uf}
+                      Período de análise: {previewAlert?.hours || 48} horas.
                     </p>
-                    <p>🌧️ Chuva excessiva · {crop}</p>
                     <p>
-                      Condição simulada: {alerts[0]?.mm ?? simulation} mm,
-                      conforme regra cadastrada.
+                      {previewAlert?.kind === "heat" ? "🌡️" : "🌧️"}{" "}
+                      {previewAlert?.ruleName} · {previewAlert?.crop}
+                    </p>
+                    <p>
+                      Condição simulada: {previewAlert?.value ?? simulation}{" "}
+                      {previewAlert?.unit || "mm"}, conforme regra cadastrada.
                     </p>
                     <p>
                       <b>Orientação:</b>{" "}
-                      {alerts[0]?.guidance ?? initialRule.guidance}
+                      {previewAlert?.guidance ?? initialRule.guidance}
+                    </p>
+                    <p>
+                      Responsável informado:{" "}
+                      {previewAlert?.agronomist || "Equipe de demonstração"}
                     </p>
                     <small>DADOS FICTÍCIOS · Demonstração</small>
                     <time>agora ✓✓</time>
@@ -1474,7 +1599,7 @@ export default function Home() {
                 <button
                   className="primary"
                   onClick={() => {
-                    setRules([initialRule]);
+                    setRules(initialRules);
                     setFarms([]);
                     setAlerts([]);
                     setConsent(false);

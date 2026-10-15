@@ -45,6 +45,11 @@ model AlertRule {
  threshold Float
  hours Int
  guidance String
+ agronomistName String @default("Responsável não informado")
+ professionalRegistration String?
+ createdByName String @default("Responsável não informado")
+ createdAt DateTime @default(now())
+ history Json @default("[]")
  active Boolean @default(false)
  updatedAt DateTime @updatedAt
  @@index([organizationId,active])
