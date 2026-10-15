@@ -1,55 +1,1494 @@
-'use client';
-import {useState,useEffect} from 'react';
-import dynamic from 'next/dynamic';
-import {Sprout,House,Waves,CloudSun,Bell,TrendingUp,Newspaper,Tractor,Settings,ChevronDown,ArrowUpRight,ArrowRight,MapPin,ShieldCheck,Plus,Search,X,Check,Send,SlidersHorizontal,Menu,CloudRain,Sun,Wind,Droplets,ExternalLink,FlaskConical,Activity,Users,LogOut} from 'lucide-react';
-import {AreaChart,Area,ResponsiveContainer,Tooltip,XAxis,CartesianGrid} from 'recharts';
-import {evaluateRain,type Rule} from '@/lib/rules';
-const RegionMap=dynamic(()=>import('@/components/RegionMap'),{ssr:false,loading:()=> <div className="map-loading">Carregando mapa…</div>});
-const cities=[{name:'Sorriso',uf:'MT',lat:-12.5425,lon:-55.7211},{name:'Sinop',uf:'MT',lat:-11.8642,lon:-55.5036},{name:'Lucas do Rio Verde',uf:'MT',lat:-13.0588,lon:-55.9042},{name:'Silvânia',uf:'GO',lat:-16.6589,lon:-48.6081}];
-const nav=[{label:'Visão geral',icon:House},{label:'El Niño / La Niña',icon:Waves},{label:'Previsão do tempo',icon:CloudSun},{label:'Alertas e riscos',icon:Bell},{label:'Economia e preços',icon:TrendingUp},{label:'Atualizações',icon:Newspaper}];
-const initialRule:Rule={id:'rain-1',name:'Chuva excessiva',city:'Sorriso',crop:'Soja',threshold:70,hours:48,guidance:'Verificar a drenagem da lavoura e evitar operações com máquinas em solo encharcado.',active:true};
-const forecast=[{day:'Hoje',date:'13 out',max:32,min:24,rain:20,chance:60,sun:true},{day:'Quarta',date:'14 out',max:28,min:22,rain:80,chance:90},{day:'Quinta',date:'15 out',max:27,min:21,rain:70,chance:90},{day:'Sexta',date:'16 out',max:29,min:22,rain:50,chance:70},{day:'Sábado',date:'17 out',max:31,min:23,rain:10,chance:30,sun:true},{day:'Domingo',date:'18 out',max:33,min:24,rain:5,chance:20,sun:true},{day:'Segunda',date:'19 out',max:32,min:23,rain:12,chance:40}];
-const graph=[30,32,29,35,33,39,37,41,40,45,43,49].map((v,i)=>({name:`${i+1} out`,value:v}));
-type Farm={id:string;name:string;city:string;crop:string;stage:string};
-type Alert={id:string;title:string;date:string;guidance:string;mm:number};
-function MiniChart({color='#21d59c',reverse=false}:{color?:string;reverse?:boolean}){return <ResponsiveContainer width="100%" height={52}><AreaChart data={graph.map(x=>({...x,value:reverse?80-x.value:x.value}))}><defs><linearGradient id={color.replace('#','')} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity={.3}/><stop offset="100%" stopColor={color} stopOpacity={0}/></linearGradient></defs><Area type="monotone" dataKey="value" stroke={color} fill={`url(#${color.replace('#','')})`} strokeWidth={2}/></AreaChart></ResponsiveContainer>}
-export default function Home(){
- const [page,setPage]=useState('Visão geral'),[cityIdx,setCityIdx]=useState(0),[crop,setCrop]=useState('Soja'),[mobile,setMobile]=useState(false),[tab,setTab]=useState('Minhas culturas'),[modal,setModal]=useState<string|null>(null),[toast,setToast]=useState(''),[rules,setRules]=useState<Rule[]>([initialRule]),[farms,setFarms]=useState<Farm[]>([]),[alerts,setAlerts]=useState<Alert[]>([]),[ready,setReady]=useState(false),[live,setLive]=useState<any>(null),[weatherState,setWeatherState]=useState('demo'),[simulation,setSimulation]=useState(85),[form,setForm]=useState(initialRule),[farmForm,setFarmForm]=useState({name:'',city:'Sorriso',crop:'Soja',stage:'Plantio'}),[consent,setConsent]=useState(false),[notification,setNotification]=useState(false);
- const city=cities[cityIdx];
- useEffect(()=>{try{const d=JSON.parse(localStorage.getItem('agronino-demo')||'null');if(d){setRules(d.rules||[initialRule]);setFarms(d.farms||[]);setAlerts(d.alerts||[]);setConsent(!!d.consent)}}catch{}setReady(true)},[]);
- useEffect(()=>{if(ready)localStorage.setItem('agronino-demo',JSON.stringify({rules,farms,alerts,consent}))},[rules,farms,alerts,consent,ready]);
- useEffect(()=>{if(toast){const t=setTimeout(()=>setToast(''),4000);return()=>clearTimeout(t)}},[toast]);
- function go(p:string){setPage(p);setMobile(false)}
- async function loadWeather(){setWeatherState('loading');try{const r=await fetch(`/api/weather?lat=${city.lat}&lon=${city.lon}`);const d=await r.json();if(!r.ok)throw Error(d.error);setLive(d);setWeatherState('live');setToast('Previsão atualizada com dados da Open-Meteo')}catch{setWeatherState('error');setLive(null)}}
- function simulate(){const rule=rules.find(r=>r.active&&r.city===city.name&&r.crop===crop);if(!rule){setToast('Crie uma regra ativa para o município e a cultura selecionados.');return}if(!evaluateRain(rule,[simulation])){setToast(`Condição não atingida: ${simulation} mm abaixo do limite de ${rule.threshold} mm.`);return}const id=`${rule.id}:${city.name}:${new Date().toISOString().slice(0,10)}`;if(alerts.some(a=>a.id===id)){setToast('Alerta já registrado para esta regra e período. Duplicata evitada.');return}setAlerts(a=>[{id,title:`Chuva excessiva em ${city.name}`,date:new Date().toLocaleString('pt-BR'),guidance:rule.guidance,mm:simulation},...a]);setToast('Alerta de demonstração gerado. Nenhuma mensagem foi enviada.');setModal('whatsapp')}
- const days=weatherState==='live'&&live?live.data.daily.time.map((date:string,i:number)=>({day:i===0?'Hoje':new Date(date+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'short'}),date:new Date(date+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}),max:Math.round(live.data.daily.temperature_2m_max[i]),min:Math.round(live.data.daily.temperature_2m_min[i]),rain:live.data.daily.precipitation_sum[i],chance:live.data.daily.precipitation_probability_max[i],sun:live.data.daily.precipitation_sum[i]<5})):forecast;
- function heading(icon:React.ReactNode,title:string,action:string,onClick:()=>void){return <div className="panel-heading"><h3>{icon}{title}</h3><button className="text-button" onClick={onClick}>{action}<ArrowRight size={14}/></button></div>}
- function weather(full=false){return <section className="panel weather">{heading(<CloudSun size={21} className="yellow"/>,`Previsão do tempo`,full?'Atualizar previsão':'Ver previsão',()=>full?loadWeather():go('Previsão do tempo'))}<div className="subline">{city.name}, {city.uf} <span className={'tiny-badge '+(weatherState==='live'?'green':'')}>{weatherState==='live'?'Dados reais · Open-Meteo':'Demonstração'}</span></div>{weatherState==='error'&&<div className="inline-error">Fonte indisponível. Os valores abaixo continuam sendo demonstrativos. <button onClick={loadWeather}>Tentar novamente</button></div>}<div className={'forecast '+(full?'full':'')}>{days.slice(0,full?7:5).map((d:any,i:number)=><div className={'day '+(i===0?'today':'')} key={i}><strong>{d.day}</strong><small>{d.date}</small>{d.sun?<CloudSun className="weather-icon yellow"/>:<CloudRain className="weather-icon blue"/>}<b>{d.max}°<span>{d.min}°</span></b><div className="rain"><Droplets size={12}/>{d.rain} <small>mm</small></div><small className="muted">{d.chance}%</small></div>)}</div><div className="source">{weatherState==='live'?`Open-Meteo · Consulta: ${new Date(live.retrievedAt).toLocaleString('pt-BR')} · ${live.data.timezone}`:'Cenário ilustrativo · não utilizar para decisões no campo'}{weatherState==='loading'&&' · Consultando…'}</div>{full&&<div className="weather-extra"><span><Droplets/> Umidade {live?.data.current?.relative_humidity_2m??'—'}%</span><span><Wind/> Vento {live?.data.current?.wind_speed_10m??'—'} km/h</span><button className="primary" onClick={loadWeather} disabled={weatherState==='loading'}>{weatherState==='loading'?'Consultando…':'Consultar dados reais'}</button></div>}</section>}
- function enso(kind:string){const el=kind==='El Niño';return <section className={'enso '+(el?'el':'la')}><div className="enso-top"><div className="enso-title"><Waves size={36}/><h2>{kind}</h2></div><span className={'status '+(el?'red':'neutral')}>{el?'Ativo • forte':'Não ativo'}</span></div><p>{el?'Aquecimento anormal das águas do Pacífico, com possíveis impactos no clima e na agricultura.':'Resfriamento das águas do Pacífico, com possíveis impactos no clima e na agricultura.'}</p><div className="prob-label">{el?'Probabilidade de continuidade':'Probabilidade de desenvolvimento'}<span>Trimestre ilustrativo</span></div><div className="prob"><b>{el?'75':'15'}<span>%</span></b><div className="progress"><i style={{width:el?'75%':'15%'}}/></div></div><p className="trend"><strong>Tendência:</strong> {el?'Manutenção do fenômeno no cenário demonstrativo.':'Baixa probabilidade no cenário demonstrativo.'}</p><button className="outline" onClick={()=>{go('El Niño / La Niña')}}>Ver detalhes e impactos<ArrowRight size={15}/></button><div className="source">Exemplo de interface · não representa classificação atual da NOAA</div></section>}
- function markets(){return <section className="panel markets">{heading(<TrendingUp className="green" size={22}/>,'Preços e mercado','Ver mercado',()=>go('Economia e preços'))}<div className="tabs">{['Minhas culturas','Insumos','Câmbio'].map(t=><button key={t} onClick={()=>setTab(t)} className={tab===t?'active':''}>{t}</button>)}</div><div className="market-grid">{(tab==='Insumos'?[['Ureia','Tonelada','2.480,00','+0,82%'],['Fosfato','Tonelada','3.210,00','-0,35%'],['Potássio','Tonelada','2.150,00','+0,21%']]:tab==='Câmbio'?[['Dólar','Comercial','5,02','+0,31%'],['Euro','Comercial','5,48','-0,14%'],['Dólar PTAX','Referência','5,01','+0,22%']]:[[crop,'Saca 60 kg · MT','148,75','+0,52%'],['Milho','Saca 60 kg · MT','65,43','-0,24%'],['Dólar','Comercial','5,02','+0,31%']]).map(([name,unit,value,change],i)=><div className="market" key={name}><span>{name}</span><small>{unit}</small><b>R$ {value}</b><span className={i===1?'negative':'positive'}>{i===1?'↘':'↗'} {change}</span><MiniChart color={i===1?'#f16e62':i===2?'#39b6ef':'#21d59c'} reverse={i===1}/></div>)}</div><div className="source">Cotações fictícias · demonstração de visualização</div></section>}
- return <div className="app"><aside className={'sidebar '+(mobile?'open':'')}><a className="brand" onClick={()=>go('Visão geral')}><div className="brand-icon"><Sprout size={35}/></div><div>AgroNiño <span>BETA</span><small>Inteligência para o seu campo.</small></div></a><div className="nav-caption">PRINCIPAL</div><nav>{nav.map(n=><button key={n.label} className={page===n.label?'selected':''} onClick={()=>go(n.label)}><n.icon size={20}/>{n.label}{n.label==='Alertas e riscos'&&alerts.length>0&&<em>{alerts.length}</em>}</button>)}</nav><div className="nav-divider"/><div className="nav-caption">MEU ESPAÇO</div><nav>{[{label:'Minhas propriedades',icon:Tractor},{label:'Painel do agrônomo',icon:Users},{label:'Configurações',icon:Settings}].map(n=><button key={n.label} className={page===n.label?'selected':''} onClick={()=>go(n.label)}><n.icon size={20}/>{n.label}</button>)}</nav><div className="official"><ShieldCheck size={24}/><div>Informação que vem<br/>de quem entende.</div><p>FONTES DE REFERÊNCIA</p><div className="logos"><strong>INMET</strong><strong>NOAA</strong><strong>CONAB</strong><span>CEPEA</span><span>IBGE</span><span>BCB</span></div><small>Integrações em preparação</small></div><div className="sidebar-bottom"><span className="online-dot"/> Ambiente de demonstração<span>v0.1.0</span></div></aside>
- <div className="main-shell"><header><button className="mobile-menu icon-button" onClick={()=>setMobile(!mobile)}><Menu/></button><div className="selectors"><label>Minha região<div className="select-wrap"><MapPin size={17}/><select value={cityIdx} onChange={e=>{setCityIdx(+e.target.value);setWeatherState('demo');setLive(null)}}>{cities.map((c,i)=><option value={i} key={c.name}>{c.name} – {c.uf}</option>)}</select><ChevronDown size={14}/></div></label><label>Minha cultura<div className="select-wrap"><Sprout size={17} className="green"/><select value={crop} onChange={e=>setCrop(e.target.value)}>{['Soja','Milho','Café','Feijão','Arroz','Pastagem'].map(c=><option key={c}>{c}</option>)}</select><ChevronDown size={14}/></div></label></div><div className="header-user"><button className="notification icon-button" onClick={()=>setNotification(!notification)}><Bell size={21}/><i/></button><span className="header-divider"/><div className="avatar">JS</div><div className="user-name">João Silva<small>Produtor rural <ChevronDown size={11}/></small></div></div>{notification&&<div className="notification-pop"><b>Central de notificações</b><p>{alerts.length?`${alerts.length} alerta(s) de demonstração registrado(s).`:'Você está em dia. Nenhum alerta registrado.'}</p><button className="text-button" onClick={()=>{go('Alertas e riscos');setNotification(false)}}>Ver histórico <ArrowRight size={14}/></button></div>}</header>
- <main><div className="page-title"><div><div className="eyebrow">SEU CAMPO, MAIS PREPARADO</div><h1>{page==='Visão geral'?'Bom dia, João':page}{page==='Visão geral'&&<span className="greeting"> ☀</span>}</h1><p>{page==='Visão geral'?'Acompanhe o clima, antecipe riscos e cuide da sua produção.':'Informação organizada para decisões mais conscientes no campo.'}</p></div><div className="date-chip"><span className="online-dot"/> Modo demonstração <FlaskConical size={14}/></div></div>
- <div className="demo-banner"><FlaskConical size={15}/><span>Você está explorando o AgroNiño. Os indicadores são <strong>dados demonstrativos</strong>, exceto quando identificados como dados reais.</span><button onClick={()=>setModal('demo')}>Saiba mais <ArrowUpRight size={13}/></button></div>
- {page==='Visão geral'&&<><div className="enso-grid">{enso('El Niño')}{enso('La Niña')}</div><div className="dashboard-grid"><div>{weather()}<div className="bottom-grid">{markets()}<section className="panel updates">{heading(<Newspaper size={21} className="blue"/>,'Últimas atualizações','Ver todas',()=>go('Atualizações'))}{[['NOAA','Monitoramento do Pacífico equatorial','Acompanhe a discussão oficial sobre o ENSO.','https://www.cpc.ncep.noaa.gov/products/analysis_monitoring/enso_advisory/ensodisc.shtml'],['INMET','Avisos meteorológicos para sua região','Consulte os avisos emitidos pelo instituto.','https://avisos.inmet.gov.br/'],['CONAB','Acompanhamento da safra brasileira','Boletins e levantamentos oficiais.','https://www.conab.gov.br/']].map(([org,title,desc,url])=><a className="update" href={url} target="_blank" rel="noreferrer" key={org}><span className={'institution '+org.toLowerCase()}>{org}</span><div><b>{title}</b><p>{desc}</p><small>Fonte oficial <ExternalLink size={10}/></small></div><ArrowUpRight size={14}/></a>)}</section></div></div><div className="right-column"><section className="panel map-panel">{heading(<MapPin size={20} className="green"/>,'Sua região','Expandir',()=>setModal('map'))}<div className="map-container"><RegionMap lat={city.lat} lon={city.lon} name={city.name}/><span className="map-tag"><span className="online-dot"/>{city.name}, {city.uf}</span></div><div className="map-legend"><span className="legend-dot"/> Sem camada oficial de risco disponível</div></section><section className="panel alert-summary"><div className="alert-symbol"><ShieldCheck size={25}/></div><h3>Prevenir é o melhor caminho.</h3><p>Receba orientações para sua cultura e alertas relevantes para a sua região.</p><button className="primary" onClick={()=>go('Alertas e riscos')}>Meus alertas <ArrowRight size={15}/></button><div className="subline"><ShieldCheck size={12}/> Você escolhe o que quer receber</div></section></div></div><section className="field-banner"><div className="field-art"><Sprout size={52}/><div className="field-lines"/></div><div><span>CUIDADO QUE VAI ALÉM DA PREVISÃO</span><h3>Mais informação. Menos imprevistos.</h3><p>Conecte suas propriedades e acompanhe o que importa para sua lavoura.</p></div><button className="outline" onClick={()=>go('Minhas propriedades')}>Cadastrar propriedade <Plus size={16}/></button></section></>}
- {page==='Previsão do tempo'&&<>{weather(true)}<section className="panel detail-panel"><h3>Temperaturas da semana</h3><p className="muted">{weatherState==='live'?'Previsão Open-Meteo':'Dados de demonstração'}</p><ResponsiveContainer width="100%" height={260}><AreaChart data={days}><CartesianGrid stroke="#233943" vertical={false}/><XAxis dataKey="day" stroke="#7c939d"/><Tooltip contentStyle={{background:'#122630',border:'1px solid #345'}}/><Area type="monotone" dataKey="max" name="Máxima °C" stroke="#25d4a1" fill="#25d4a120"/><Area type="monotone" dataKey="min" name="Mínima °C" stroke="#4ca9ef" fill="#4ca9ef10"/></AreaChart></ResponsiveContainer><p className="source">Consulte condições e licença comercial da Open-Meteo antes de publicar o serviço.</p></section></>}
- {page==='El Niño / La Niña'&&<><div className="enso-grid">{enso('El Niño')}{enso('La Niña')}</div><section className="panel detail-panel"><span className="tiny-badge">OBSERVAÇÃO ≠ PROJEÇÃO</span><h2>Entenda o que acontece no Pacífico</h2><p>O ENSO alterna entre El Niño, La Niña e neutralidade. A classificação depende de observações oceânicas e atmosféricas; as probabilidades futuras não são uma garantia.</p><div className="info-grid">{[['El Niño','Aquecimento persistente do Pacífico equatorial. Os efeitos variam por região, estação e cultura.'],['La Niña','Resfriamento persistente do Pacífico equatorial. Não ocorre como fase ativa simultânea ao El Niño.'],['Neutralidade','Condições que não atendem aos critérios de uma das fases. Não significa ausência de eventos extremos.']].map(([t,d])=><article key={t}><Waves className="blue"/><h3>{t}</h3><p>{d}</p></article>)}</div><div className="empty-state"><Activity/><h3>Boletim atual ainda não conectado</h3><p>A classificação, intensidade e probabilidades atuais não foram verificadas. Os cards acima são uma simulação visual.</p><a className="primary" href="https://www.cpc.ncep.noaa.gov/products/analysis_monitoring/enso_advisory/ensodisc.shtml" target="_blank" rel="noreferrer">Consultar NOAA/CPC <ExternalLink size={14}/></a></div></section></>}
- {page==='Economia e preços'&&<>{markets()}<section className="panel detail-panel"><h2>Mercado com contexto</h2><p>Indicadores nacionais não representam necessariamente o preço recebido na sua propriedade. Todas as cotações exibidas nesta versão são fictícias.</p><div className="info-grid">{[['CEPEA','Indicadores agropecuários','https://www.cepea.esalq.usp.br/'],['CONAB','Safra e abastecimento','https://www.conab.gov.br/'],['Banco Central','Câmbio e séries oficiais','https://dadosabertos.bcb.gov.br/']].map(([t,d,url])=><a href={url} target="_blank" rel="noreferrer" key={t}><TrendingUp className="green"/><h3>{t}</h3><p>{d}</p><span className="text-button">Consultar fonte <ExternalLink size={14}/></span></a>)}</div><p className="source">Redistribuição comercial pendente de verificação de licença e autorização de cada fonte.</p></section></>}
- {page==='Alertas e riscos'&&<><div className="stat-grid"><div className="panel stat"><Bell className="green"/><b>{alerts.length}</b><span>Alertas simulados</span></div><div className="panel stat"><ShieldCheck className="blue"/><b>{rules.filter(r=>r.active).length}</b><span>Regras ativas de demonstração</span></div><div className="panel stat"><Send className="yellow"/><b>0</b><span>Mensagens reais enviadas</span></div></div><section className="panel detail-panel"><div className="panel-heading"><h3>Histórico de alertas</h3><button className="primary" onClick={()=>setModal('simulate')}><FlaskConical size={15}/> Simular condição</button></div>{alerts.length?alerts.map(a=><div className="alert-row" key={a.id}><div className="risk-icon"><CloudRain/></div><div><span className="tiny-badge">PERSONALIZADO · SIMULAÇÃO</span><h3>{a.title}</h3><p>{a.mm} mm simulados · {a.date}</p><p>{a.guidance}</p></div><button className="outline" onClick={()=>setModal('whatsapp')}>Prévia <ArrowRight size={14}/></button></div>):<div className="empty-state"><ShieldCheck/><h3>Nenhum alerta registrado</h3><p>Simule uma condição para testar as regras. Os avisos oficiais ainda não estão conectados.</p><button className="outline" onClick={()=>setModal('simulate')}>Testar uma regra</button></div>}</section></>}
- {page==='Minhas propriedades'&&<section className="panel detail-panel"><div className="panel-heading"><h3>Seu campo, em um só lugar</h3><button className="primary" onClick={()=>setModal('farm')}><Plus size={16}/> Nova propriedade</button></div>{farms.length?<div className="info-grid">{farms.map(f=><article key={f.id}><Tractor className="green"/><h3>{f.name}</h3><p><MapPin size={14}/> {f.city}</p><p>{f.crop} · {f.stage}</p><button className="text-button" onClick={()=>{setFarms(x=>x.filter(v=>v.id!==f.id));setToast('Propriedade removida da demonstração')}}>Remover</button></article>)}</div>:<div className="empty-state"><Tractor/><h3>O próximo capítulo começa na sua propriedade.</h3><p>Cadastre sua primeira propriedade para personalizar esta demonstração.</p><button className="primary" onClick={()=>setModal('farm')}>Cadastrar propriedade <Plus size={15}/></button></div>}<p className="source">Cadastros armazenados apenas neste navegador. Não informe dados pessoais sensíveis.</p></section>}
- {page==='Painel do agrônomo'&&<><div className="admin-note"><ShieldCheck size={18}/> Painel demonstrativo · autenticação e aprovação profissional ainda não habilitadas.</div><section className="panel detail-panel"><div className="panel-heading"><h3>Regras de alerta preventivo</h3><button className="primary" onClick={()=>{setForm({...initialRule,id:crypto.randomUUID(),city:city.name,crop});setModal('rule')}}><Plus size={16}/> Nova regra</button></div><p className="muted">Limites definidos pelo profissional para cada região e cultura.</p>{rules.map(r=><div className="rule-row" key={r.id}><div className="risk-icon"><CloudRain/></div><div><h3>{r.name}</h3><p>{r.city} · {r.crop} · ≥ {r.threshold} mm em {r.hours}h</p><small>{r.guidance}</small></div><button className={'toggle '+(r.active?'on':'')} aria-label={r.active?'Desativar regra':'Ativar regra'} onClick={()=>setRules(rs=>rs.map(x=>x.id===r.id?{...x,active:!x.active}:x))}><span/></button><button className="outline" onClick={()=>{setForm(r);setModal('rule')}}>Editar</button></div>)}</section><section className="panel detail-panel"><h3>Motor de automação</h3><div className="flow"><div><CloudSun/>Fontes oficiais<small>Adaptadores</small></div><ArrowRight/><div><Activity/>Worker Node.js<small>BullMQ + Redis</small></div><ArrowRight/><div><SlidersHorizontal/>Regras agronômicas<small>Avaliação e deduplicação</small></div><ArrowRight/><div><Send/>Notificações<small>Sandbox padrão</small></div></div><p className="source">Infraestrutura inicial preparada no repositório. Este painel não indica execução de jobs de produção.</p><button className="outline" onClick={()=>setModal('simulate')}>Testar fluxo demonstrativo <FlaskConical size={15}/></button></section></>}
- {page==='Atualizações'&&<section className="panel detail-panel"><h3>Central de fontes oficiais</h3><p className="muted">Links de referência. Nenhum boletim atual foi importado ou atribuído automaticamente às instituições.</p><div className="info-grid">{[['NOAA / CPC','Discussões oficiais e monitoramento ENSO','https://www.cpc.ncep.noaa.gov/'],['INMET','Avisos meteorológicos brasileiros','https://avisos.inmet.gov.br/'],['CEMADEN','Monitoramento de riscos e desastres','https://www.gov.br/cemaden/'],['Defesa Civil','Proteção e defesa civil','https://www.gov.br/mdr/'],['CONAB','Acompanhamento de safras','https://www.conab.gov.br/'],['IBGE','Municípios e informações territoriais','https://www.ibge.gov.br/']].map(([t,d,url])=><a href={url} target="_blank" rel="noreferrer" key={t}><Newspaper className="blue"/><h3>{t}</h3><p>{d}</p><span className="text-button">Acessar instituição <ExternalLink size={14}/></span></a>)}</div></section>}
- {page==='Configurações'&&<section className="panel detail-panel settings"><h3>Preferências de demonstração</h3><div className="setting-row"><div><h4>Prévia de notificações WhatsApp</h4><p>Permitir testar mensagens no sandbox, sem envio real.</p></div><button aria-label="Alterar consentimento sandbox" className={'toggle '+(consent?'on':'')} onClick={()=>setConsent(!consent)}><span/></button></div><div className="setting-row"><div><h4>Armazenamento local</h4><p>Propriedades, regras e eventos ficam apenas neste navegador.</p></div><button className="outline" onClick={()=>setModal('reset')}>Limpar demonstração</button></div><div className="empty-state"><ShieldCheck/><h3>Integrações de produção não configuradas</h3><p>Autenticação, banco compartilhado e WhatsApp real dependem da próxima etapa de implementação e configuração segura do servidor.</p></div></section>}
- <footer><span><Sprout size={13}/> AgroNiño <span className="muted">· Inteligência para o seu campo</span></span><span>Feito para quem cultiva o amanhã.</span></footer></main></div>
- {toast&&<div className="toast"><Check size={18}/>{toast}<button onClick={()=>setToast('')}><X size={15}/></button></div>}
- {modal&&<div className="modal-backdrop" onClick={()=>setModal(null)}><section className={'modal '+(modal==='map'?'wide':'')} onClick={e=>e.stopPropagation()}><button className="close icon-button" onClick={()=>setModal(null)} aria-label="Fechar"><X/></button>
- {modal==='demo'&&<><FlaskConical className="green" size={30}/><h2>Explore com tranquilidade</h2><p>ENSO, preços, previsão inicial e simulações usam dados fictícios. A previsão consultada pelo botão “Consultar dados reais” vem da Open-Meteo. O mapa usa OpenStreetMap, sem camada artificial de risco.</p><p>Cadastros ficam no navegador e nenhuma mensagem real é enviada.</p><button className="primary" onClick={()=>setModal(null)}>Entendi <Check size={15}/></button></>}
- {modal==='farm'&&<form onSubmit={e=>{e.preventDefault();setFarms(f=>[...f,{...farmForm,id:crypto.randomUUID()}]);setModal(null);setFarmForm({...farmForm,name:''});setToast('Propriedade cadastrada nesta demonstração')}}><div className="eyebrow">MEU ESPAÇO</div><h2>Nova propriedade</h2><p>Personalize seu acompanhamento no campo.</p><label>Nome da propriedade<input required minLength={2} maxLength={100} placeholder="Ex.: Fazenda Boa Esperança" value={farmForm.name} onChange={e=>setFarmForm({...farmForm,name:e.target.value})}/></label><label>Município<select value={farmForm.city} onChange={e=>setFarmForm({...farmForm,city:e.target.value})}>{cities.map(c=><option key={c.name}>{c.name}</option>)}</select></label><div className="form-grid"><label>Cultura<select value={farmForm.crop} onChange={e=>setFarmForm({...farmForm,crop:e.target.value})}>{['Soja','Milho','Café','Feijão','Arroz','Pastagem','Outras'].map(x=><option key={x}>{x}</option>)}</select></label><label>Fase da lavoura<select value={farmForm.stage} onChange={e=>setFarmForm({...farmForm,stage:e.target.value})}>{['Plantio','Crescimento','Floração','Enchimento de grãos','Colheita'].map(x=><option key={x}>{x}</option>)}</select></label></div><p className="source">Localidades de demonstração. Catálogo IBGE disponível no endpoint /api/municipalities.</p><button className="primary" type="submit">Salvar propriedade <Check size={16}/></button></form>}
- {modal==='rule'&&<form onSubmit={e=>{e.preventDefault();setRules(rs=>rs.some(r=>r.id===form.id)?rs.map(r=>r.id===form.id?form:r):[...rs,form]);setModal(null);setToast('Regra demonstrativa salva')}}><div className="eyebrow">PAINEL DO AGRÔNOMO</div><h2>{rules.some(r=>r.id===form.id)?'Editar regra':'Nova regra de alerta'}</h2><label>Tipo de risco<select value={form.name} onChange={e=>setForm({...form,name:e.target.value})}><option>Chuva excessiva</option></select></label><div className="form-grid"><label>Município<select value={form.city} onChange={e=>setForm({...form,city:e.target.value})}>{cities.map(c=><option key={c.name}>{c.name}</option>)}</select></label><label>Cultura<select value={form.crop} onChange={e=>setForm({...form,crop:e.target.value})}>{['Soja','Milho','Café','Feijão','Arroz','Pastagem'].map(x=><option key={x}>{x}</option>)}</select></label><label>Chuva acumulada (mm)<input type="number" required min="1" max="3000" value={form.threshold} onChange={e=>setForm({...form,threshold:+e.target.value})}/></label><label>Período (horas)<input type="number" required min="1" max="384" value={form.hours} onChange={e=>setForm({...form,hours:+e.target.value})}/></label></div><label>Orientação preventiva<textarea required minLength={10} value={form.guidance} onChange={e=>setForm({...form,guidance:e.target.value})}/></label><p className="source">Regra de demonstração. Uso real exige validação de profissional autorizado.</p><button className="primary" type="submit">Salvar regra <Check size={15}/></button></form>}
- {modal==='simulate'&&<><FlaskConical className="green"/><h2>Simular chuva excessiva</h2><p>Teste as regras ativas para {crop} em {city.name}. Os valores são fictícios e não geram envios.</p><label>Acumulado simulado (mm)<input type="number" min="0" max="2000" value={simulation} onChange={e=>setSimulation(Math.max(0,+e.target.value))}/></label><p className="source">A repetição da mesma regra no mesmo dia não cria alertas duplicados.</p><button className="primary" onClick={simulate}>Executar simulação <ArrowRight size={15}/></button></>}
- {modal==='whatsapp'&&<><span className="tiny-badge">SANDBOX · NENHUM ENVIO REAL</span><h2>Prévia no WhatsApp</h2><div className="whatsapp"><div className="wa-head"><span className="brand-icon"><Sprout/></span><div><b>AgroNiño <ShieldCheck size={13}/></b><small>Alertas e atualizações</small></div></div><div className="wa-bubble"><b>🌱 AgroNiño — Alerta preventivo</b><p>📍 {city.name} – {city.uf}</p><p>🌧️ Chuva excessiva · {crop}</p><p>Condição simulada: {alerts[0]?.mm??simulation} mm, conforme regra cadastrada.</p><p><b>Orientação:</b> {alerts[0]?.guidance??initialRule.guidance}</p><small>DADOS FICTÍCIOS · Demonstração</small><time>agora ✓✓</time></div></div><label className="checkbox"><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)}/> Autorizar teste no sandbox local</label><button className="primary" disabled={!consent} onClick={()=>{setToast('Prévia validada no sandbox. Nenhuma chamada à Meta foi realizada.');setModal(null)}}><Check size={15}/> Validar prévia</button></>}
- {modal==='map'&&<><h2>{city.name}, {city.uf}</h2><p>Mapa de localização · sem geometrias oficiais de avisos conectadas.</p><div style={{height:450}}><RegionMap lat={city.lat} lon={city.lon} name={city.name}/></div></>}
- {modal==='reset'&&<><h2>Limpar dados de demonstração?</h2><p>Remove propriedades e eventos salvos neste navegador e restaura a regra inicial.</p><button className="primary" onClick={()=>{setRules([initialRule]);setFarms([]);setAlerts([]);setConsent(false);setModal(null);setToast('Demonstração restaurada')}}>Limpar e restaurar</button></>}
- </section></div>}
- </div>
+"use client";
+import { useState, useEffect } from "react";
+import dynamic from "next/dynamic";
+import {
+  Sprout,
+  House,
+  Waves,
+  CloudSun,
+  Bell,
+  Newspaper,
+  Tractor,
+  Settings,
+  ChevronDown,
+  ArrowUpRight,
+  ArrowRight,
+  MapPin,
+  ShieldCheck,
+  Plus,
+  X,
+  Check,
+  Send,
+  SlidersHorizontal,
+  Menu,
+  CloudRain,
+  Wind,
+  Droplets,
+  ExternalLink,
+  FlaskConical,
+  Activity,
+  Users,
+} from "lucide-react";
+import {
+  AreaChart,
+  Area,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  CartesianGrid,
+} from "recharts";
+import { useReducedMotion } from "@/lib/useReducedMotion";
+import ClimateOverview from "@/components/ClimateOverview";
+import { evaluateRain, type Rule } from "@/lib/rules";
+const RegionMap = dynamic(() => import("@/components/RegionMap"), {
+  ssr: false,
+  loading: () => <div className="map-loading">Carregando mapa…</div>,
+});
+const cities = [
+  { name: "Sorriso", uf: "MT", lat: -12.5425, lon: -55.7211 },
+  { name: "Sinop", uf: "MT", lat: -11.8642, lon: -55.5036 },
+  { name: "Lucas do Rio Verde", uf: "MT", lat: -13.0588, lon: -55.9042 },
+  { name: "Silvânia", uf: "GO", lat: -16.6589, lon: -48.6081 },
+];
+const nav = [
+  { label: "Visão geral", icon: House },
+  { label: "El Niño / La Niña", icon: Waves },
+  { label: "Previsão do tempo", icon: CloudSun },
+  { label: "Alertas e riscos", icon: Bell },
+  { label: "Atualizações", icon: Newspaper },
+];
+const initialRule: Rule = {
+  id: "rain-1",
+  name: "Chuva excessiva",
+  city: "Sorriso",
+  crop: "Soja",
+  threshold: 70,
+  hours: 48,
+  guidance:
+    "Verificar a drenagem da lavoura e evitar operações com máquinas em solo encharcado.",
+  active: true,
+};
+const forecast = [
+  {
+    day: "Hoje",
+    date: "13 out",
+    max: 32,
+    min: 24,
+    rain: 20,
+    chance: 60,
+    sun: true,
+  },
+  { day: "Quarta", date: "14 out", max: 28, min: 22, rain: 80, chance: 90 },
+  { day: "Quinta", date: "15 out", max: 27, min: 21, rain: 70, chance: 90 },
+  { day: "Sexta", date: "16 out", max: 29, min: 22, rain: 50, chance: 70 },
+  {
+    day: "Sábado",
+    date: "17 out",
+    max: 31,
+    min: 23,
+    rain: 10,
+    chance: 30,
+    sun: true,
+  },
+  {
+    day: "Domingo",
+    date: "18 out",
+    max: 33,
+    min: 24,
+    rain: 5,
+    chance: 20,
+    sun: true,
+  },
+  { day: "Segunda", date: "19 out", max: 32, min: 23, rain: 12, chance: 40 },
+];
+type Farm = {
+  id: string;
+  name: string;
+  city: string;
+  crop: string;
+  stage: string;
+};
+type Alert = {
+  id: string;
+  title: string;
+  date: string;
+  guidance: string;
+  mm: number;
+};
+export default function Home() {
+  const reducedMotion = useReducedMotion();
+  const [page, setPage] = useState("Visão geral"),
+    [cityIdx, setCityIdx] = useState(0),
+    [crop, setCrop] = useState("Soja"),
+    [mobile, setMobile] = useState(false),
+    [modal, setModal] = useState<string | null>(null),
+    [toast, setToast] = useState(""),
+    [rules, setRules] = useState<Rule[]>([initialRule]),
+    [farms, setFarms] = useState<Farm[]>([]),
+    [alerts, setAlerts] = useState<Alert[]>([]),
+    [ready, setReady] = useState(false),
+    [live, setLive] = useState<any>(null),
+    [weatherState, setWeatherState] = useState("demo"),
+    [simulation, setSimulation] = useState(85),
+    [form, setForm] = useState(initialRule),
+    [farmForm, setFarmForm] = useState({
+      name: "",
+      city: "Sorriso",
+      crop: "Soja",
+      stage: "Plantio",
+    }),
+    [consent, setConsent] = useState(false),
+    [notification, setNotification] = useState(false);
+  const city = cities[cityIdx];
+  useEffect(() => {
+    try {
+      const d = JSON.parse(localStorage.getItem("agronino-demo") || "null");
+      if (d) {
+        setRules(d.rules || [initialRule]);
+        setFarms(d.farms || []);
+        setAlerts(d.alerts || []);
+        setConsent(!!d.consent);
+      }
+    } catch {}
+    setReady(true);
+  }, []);
+  useEffect(() => {
+    if (ready)
+      localStorage.setItem(
+        "agronino-demo",
+        JSON.stringify({ rules, farms, alerts, consent }),
+      );
+  }, [rules, farms, alerts, consent, ready]);
+  useEffect(() => {
+    if (toast) {
+      const t = setTimeout(() => setToast(""), 4000);
+      return () => clearTimeout(t);
+    }
+  }, [toast]);
+  function go(p: string) {
+    setPage(p);
+    setMobile(false);
+  }
+  async function loadWeather() {
+    setWeatherState("loading");
+    try {
+      const r = await fetch(`/api/weather?lat=${city.lat}&lon=${city.lon}`);
+      const d = await r.json();
+      if (!r.ok) throw Error(d.error);
+      setLive(d);
+      setWeatherState("live");
+      setToast("Previsão atualizada com dados da Open-Meteo");
+    } catch {
+      setWeatherState("error");
+      setLive(null);
+    }
+  }
+  function simulate() {
+    const rule = rules.find(
+      (r) => r.active && r.city === city.name && r.crop === crop,
+    );
+    if (!rule) {
+      setToast(
+        "Crie uma regra ativa para o município e a cultura selecionados.",
+      );
+      return;
+    }
+    if (!evaluateRain(rule, [simulation])) {
+      setToast(
+        `Condição não atingida: ${simulation} mm abaixo do limite de ${rule.threshold} mm.`,
+      );
+      return;
+    }
+    const id = `${rule.id}:${city.name}:${new Date().toISOString().slice(0, 10)}`;
+    if (alerts.some((a) => a.id === id)) {
+      setToast(
+        "Alerta já registrado para esta regra e período. Duplicata evitada.",
+      );
+      return;
+    }
+    setAlerts((a) => [
+      {
+        id,
+        title: `Chuva excessiva em ${city.name}`,
+        date: new Date().toLocaleString("pt-BR"),
+        guidance: rule.guidance,
+        mm: simulation,
+      },
+      ...a,
+    ]);
+    setToast("Alerta de demonstração gerado. Nenhuma mensagem foi enviada.");
+    setModal("whatsapp");
+  }
+  const days =
+    weatherState === "live" && live
+      ? live.data.daily.time.map((date: string, i: number) => ({
+          day:
+            i === 0
+              ? "Hoje"
+              : new Date(date + "T12:00:00").toLocaleDateString("pt-BR", {
+                  weekday: "short",
+                }),
+          date: new Date(date + "T12:00:00").toLocaleDateString("pt-BR", {
+            day: "2-digit",
+            month: "short",
+          }),
+          max: Math.round(live.data.daily.temperature_2m_max[i]),
+          min: Math.round(live.data.daily.temperature_2m_min[i]),
+          rain: live.data.daily.precipitation_sum[i],
+          chance: live.data.daily.precipitation_probability_max[i],
+          sun: live.data.daily.precipitation_sum[i] < 5,
+        }))
+      : forecast;
+  function heading(
+    icon: React.ReactNode,
+    title: string,
+    action: string,
+    onClick: () => void,
+  ) {
+    return (
+      <div className="panel-heading">
+        <h3>
+          {icon}
+          {title}
+        </h3>
+        <button className="text-button" onClick={onClick}>
+          {action}
+          <ArrowRight size={14} />
+        </button>
+      </div>
+    );
+  }
+  function weather(full = false) {
+    return (
+      <section className="panel weather">
+        {heading(
+          <CloudSun size={21} className="yellow" />,
+          `Previsão do tempo`,
+          full ? "Atualizar previsão" : "Ver previsão",
+          () => (full ? loadWeather() : go("Previsão do tempo")),
+        )}
+        <div className="subline">
+          {city.name}, {city.uf}{" "}
+          <span
+            className={"tiny-badge " + (weatherState === "live" ? "green" : "")}
+          >
+            {weatherState === "live"
+              ? "Dados reais · Open-Meteo"
+              : "Demonstração"}
+          </span>
+        </div>
+        {weatherState === "error" && (
+          <div className="inline-error">
+            Fonte indisponível. Os valores abaixo continuam sendo
+            demonstrativos.{" "}
+            <button onClick={loadWeather}>Tentar novamente</button>
+          </div>
+        )}
+        <div className={"forecast " + (full ? "full" : "")}>
+          {days.slice(0, full ? 7 : 5).map((d: any, i: number) => (
+            <div className={"day " + (i === 0 ? "today" : "")} key={i}>
+              <strong>{d.day}</strong>
+              <small>{d.date}</small>
+              {d.sun ? (
+                <CloudSun className="weather-icon yellow" />
+              ) : (
+                <CloudRain className="weather-icon blue" />
+              )}
+              <b>
+                {d.max}°<span>{d.min}°</span>
+              </b>
+              <div className="rain">
+                <Droplets size={12} />
+                {d.rain} <small>mm</small>
+              </div>
+              <small className="muted">{d.chance}%</small>
+            </div>
+          ))}
+        </div>
+        <div className="source">
+          {weatherState === "live"
+            ? `Open-Meteo · Consulta: ${new Date(live.retrievedAt).toLocaleString("pt-BR")} · ${live.data.timezone}`
+            : "Cenário ilustrativo · não utilizar para decisões no campo"}
+          {weatherState === "loading" && " · Consultando…"}
+        </div>
+        {full && (
+          <div className="weather-extra">
+            <span>
+              <Droplets /> Umidade{" "}
+              {live?.data.current?.relative_humidity_2m ?? "—"}%
+            </span>
+            <span>
+              <Wind /> Vento {live?.data.current?.wind_speed_10m ?? "—"} km/h
+            </span>
+            <button
+              className="primary"
+              onClick={loadWeather}
+              disabled={weatherState === "loading"}
+            >
+              {weatherState === "loading"
+                ? "Consultando…"
+                : "Consultar dados reais"}
+            </button>
+          </div>
+        )}
+      </section>
+    );
+  }
+  function enso(kind: string) {
+    const el = kind === "El Niño";
+    return (
+      <section className={"enso " + (el ? "el" : "la")}>
+        <div className="enso-top">
+          <div className="enso-title">
+            <Waves size={36} />
+            <h2>{kind}</h2>
+          </div>
+          <span className={"status " + (el ? "red" : "neutral")}>
+            {el ? "Ativo • forte" : "Não ativo"}
+          </span>
+        </div>
+        <p>
+          {el
+            ? "Aquecimento anormal das águas do Pacífico, com possíveis impactos no clima e na agricultura."
+            : "Resfriamento das águas do Pacífico, com possíveis impactos no clima e na agricultura."}
+        </p>
+        <div className="prob-label">
+          {el
+            ? "Probabilidade de continuidade"
+            : "Probabilidade de desenvolvimento"}
+          <span>Trimestre ilustrativo</span>
+        </div>
+        <div className="prob">
+          <b>
+            {el ? "75" : "15"}
+            <span>%</span>
+          </b>
+          <div className="progress">
+            <i style={{ width: el ? "75%" : "15%" }} />
+          </div>
+        </div>
+        <p className="trend">
+          <strong>Tendência:</strong>{" "}
+          {el
+            ? "Manutenção do fenômeno no cenário demonstrativo."
+            : "Baixa probabilidade no cenário demonstrativo."}
+        </p>
+        <button
+          className="outline"
+          onClick={() => {
+            go("El Niño / La Niña");
+          }}
+        >
+          Ver detalhes e impactos
+          <ArrowRight size={15} />
+        </button>
+        <div className="source">
+          Exemplo de interface · não representa classificação atual da NOAA
+        </div>
+      </section>
+    );
+  }
+  return (
+    <div className="app">
+      <aside className={"sidebar " + (mobile ? "open" : "")}>
+        <a className="brand" onClick={() => go("Visão geral")}>
+          <div className="brand-icon">
+            <Sprout size={35} />
+          </div>
+          <div>
+            AgroNiño <span>BETA</span>
+            <small>Inteligência para o seu campo.</small>
+          </div>
+        </a>
+        <div className="nav-caption">PRINCIPAL</div>
+        <nav>
+          {nav.map((n) => (
+            <button
+              key={n.label}
+              className={page === n.label ? "selected" : ""}
+              onClick={() => go(n.label)}
+            >
+              <n.icon size={20} />
+              {n.label}
+              {n.label === "Alertas e riscos" && alerts.length > 0 && (
+                <em>{alerts.length}</em>
+              )}
+            </button>
+          ))}
+        </nav>
+        <div className="nav-divider" />
+        <div className="nav-caption">MEU ESPAÇO</div>
+        <nav>
+          {[
+            { label: "Minhas propriedades", icon: Tractor },
+            { label: "Painel do agrônomo", icon: Users },
+            { label: "Configurações", icon: Settings },
+          ].map((n) => (
+            <button
+              key={n.label}
+              className={page === n.label ? "selected" : ""}
+              onClick={() => go(n.label)}
+            >
+              <n.icon size={20} />
+              {n.label}
+            </button>
+          ))}
+        </nav>
+        <div className="official">
+          <ShieldCheck size={24} />
+          <div>
+            Informação que vem
+            <br />
+            de quem entende.
+          </div>
+          <p>FONTES DE REFERÊNCIA</p>
+          <div className="logos">
+            <strong>INMET</strong>
+            <strong>NOAA</strong>
+            <strong>CONAB</strong>
+            <span>IBGE</span>
+          </div>
+          <small>Integrações em preparação</small>
+        </div>
+        <div className="sidebar-bottom">
+          <span className="online-dot" /> Ambiente de demonstração
+          <span>v0.1.0</span>
+        </div>
+      </aside>
+      <div className="main-shell">
+        <header>
+          <button
+            className="mobile-menu icon-button"
+            onClick={() => setMobile(!mobile)}
+          >
+            <Menu />
+          </button>
+          <div className="selectors">
+            <label>
+              Minha região
+              <div className="select-wrap">
+                <MapPin size={17} />
+                <select
+                  value={cityIdx}
+                  onChange={(e) => {
+                    setCityIdx(+e.target.value);
+                    setWeatherState("demo");
+                    setLive(null);
+                  }}
+                >
+                  {cities.map((c, i) => (
+                    <option value={i} key={c.name}>
+                      {c.name} – {c.uf}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={14} />
+              </div>
+            </label>
+            <label>
+              Minha cultura
+              <div className="select-wrap">
+                <Sprout size={17} className="green" />
+                <select value={crop} onChange={(e) => setCrop(e.target.value)}>
+                  {["Soja", "Milho", "Café", "Feijão", "Arroz", "Pastagem"].map(
+                    (c) => (
+                      <option key={c}>{c}</option>
+                    ),
+                  )}
+                </select>
+                <ChevronDown size={14} />
+              </div>
+            </label>
+          </div>
+          <div className="header-user">
+            <button
+              className="notification icon-button"
+              onClick={() => setNotification(!notification)}
+            >
+              <Bell size={21} />
+              <i />
+            </button>
+            <span className="header-divider" />
+            <div className="avatar">JS</div>
+            <div className="user-name">
+              João Silva
+              <small>
+                Produtor rural <ChevronDown size={11} />
+              </small>
+            </div>
+          </div>
+          {notification && (
+            <div className="notification-pop">
+              <b>Central de notificações</b>
+              <p>
+                {alerts.length
+                  ? `${alerts.length} alerta(s) de demonstração registrado(s).`
+                  : "Você está em dia. Nenhum alerta registrado."}
+              </p>
+              <button
+                className="text-button"
+                onClick={() => {
+                  go("Alertas e riscos");
+                  setNotification(false);
+                }}
+              >
+                Ver histórico <ArrowRight size={14} />
+              </button>
+            </div>
+          )}
+        </header>
+        <main>
+          <div className="page-title">
+            <div>
+              <div className="eyebrow">SEU CAMPO, MAIS PREPARADO</div>
+              <h1>
+                {page === "Visão geral" ? "Bom dia, João" : page}
+                {page === "Visão geral" && <span className="greeting"> ☀</span>}
+              </h1>
+              <p>
+                {page === "Visão geral"
+                  ? "Acompanhe o clima, antecipe riscos e cuide da sua produção."
+                  : "Informação organizada para decisões mais conscientes no campo."}
+              </p>
+            </div>
+            <div className="date-chip">
+              <span className="online-dot" /> Modo demonstração{" "}
+              <FlaskConical size={14} />
+            </div>
+          </div>
+          <div className="demo-banner">
+            <FlaskConical size={15} />
+            <span>
+              Você está explorando o AgroNiño. Os indicadores são{" "}
+              <strong>dados demonstrativos</strong>, exceto quando identificados
+              como dados reais.
+            </span>
+            <button onClick={() => setModal("demo")}>
+              Saiba mais <ArrowUpRight size={13} />
+            </button>
+          </div>
+          {page === "Visão geral" && (
+            <div className="dashboard-content">
+              <div className="enso-grid">
+                {enso("El Niño")}
+                {enso("La Niña")}
+              </div>
+              <div className="dashboard-grid">
+                <div>
+                  {weather()}
+                  <div className="bottom-grid">
+                    <ClimateOverview
+                      days={days}
+                      real={weatherState === "live"}
+                      city={city.name}
+                    />
+                    <section className="panel updates">
+                      {heading(
+                        <Newspaper size={21} className="blue" />,
+                        "Últimas atualizações",
+                        "Ver todas",
+                        () => go("Atualizações"),
+                      )}
+                      {[
+                        [
+                          "NOAA",
+                          "Monitoramento do Pacífico equatorial",
+                          "Acompanhe a discussão oficial sobre o ENSO.",
+                          "https://www.cpc.ncep.noaa.gov/products/analysis_monitoring/enso_advisory/ensodisc.shtml",
+                        ],
+                        [
+                          "INMET",
+                          "Avisos meteorológicos para sua região",
+                          "Consulte os avisos emitidos pelo instituto.",
+                          "https://avisos.inmet.gov.br/",
+                        ],
+                        [
+                          "CONAB",
+                          "Acompanhamento da safra brasileira",
+                          "Boletins e levantamentos oficiais.",
+                          "https://www.conab.gov.br/",
+                        ],
+                      ].map(([org, title, desc, url]) => (
+                        <a
+                          className="update"
+                          href={url}
+                          target="_blank"
+                          rel="noreferrer"
+                          key={org}
+                        >
+                          <span className={"institution " + org.toLowerCase()}>
+                            {org}
+                          </span>
+                          <div>
+                            <b>{title}</b>
+                            <p>{desc}</p>
+                            <small>
+                              Fonte oficial <ExternalLink size={10} />
+                            </small>
+                          </div>
+                          <ArrowUpRight size={14} />
+                        </a>
+                      ))}
+                    </section>
+                  </div>
+                </div>
+                <div className="right-column">
+                  <section className="panel map-panel">
+                    {heading(
+                      <MapPin size={20} className="green" />,
+                      "Mapa da região",
+                      "Expandir",
+                      () => setModal("map"),
+                    )}
+                    <div className="map-container">
+                      <RegionMap
+                        lat={city.lat}
+                        lon={city.lon}
+                        name={city.name}
+                      />
+                      <span className="map-tag">
+                        <span className="online-dot" />
+                        {city.name}, {city.uf}
+                      </span>
+                    </div>
+                    <div className="map-legend">
+                      <span className="legend-dot" /> Limites municipais · sem
+                      camada de risco
+                    </div>
+                  </section>
+                  <section className="panel alert-summary">
+                    <div className="alert-symbol">
+                      <ShieldCheck size={25} />
+                    </div>
+                    <h3>Prevenir é o melhor caminho.</h3>
+                    <p>
+                      Receba orientações para sua cultura e alertas relevantes
+                      para a sua região.
+                    </p>
+                    <button
+                      className="primary"
+                      onClick={() => go("Alertas e riscos")}
+                    >
+                      Meus alertas <ArrowRight size={15} />
+                    </button>
+                    <div className="subline">
+                      <ShieldCheck size={12} /> Você escolhe o que quer receber
+                    </div>
+                  </section>
+                </div>
+              </div>
+              <section className="field-banner">
+                <div className="field-art">
+                  <Sprout size={52} />
+                  <div className="field-lines" />
+                </div>
+                <div>
+                  <span>CUIDADO QUE VAI ALÉM DA PREVISÃO</span>
+                  <h3>Mais informação. Menos imprevistos.</h3>
+                  <p>
+                    Conecte suas propriedades e acompanhe o que importa para sua
+                    lavoura.
+                  </p>
+                </div>
+                <button
+                  className="outline"
+                  onClick={() => go("Minhas propriedades")}
+                >
+                  Cadastrar propriedade <Plus size={16} />
+                </button>
+              </section>
+            </div>
+          )}
+          {page === "Previsão do tempo" && (
+            <>
+              {weather(true)}
+              <section className="panel detail-panel">
+                <h3>Temperaturas da semana</h3>
+                <p className="muted">
+                  {weatherState === "live"
+                    ? "Previsão Open-Meteo"
+                    : "Dados de demonstração"}
+                </p>
+                <ResponsiveContainer width="100%" height={260}>
+                  <AreaChart data={days}>
+                    <CartesianGrid stroke="#233943" vertical={false} />
+                    <XAxis dataKey="day" stroke="#7c939d" />
+                    <Tooltip
+                      contentStyle={{
+                        background: "#122630",
+                        border: "1px solid #345",
+                      }}
+                    />
+                    <Area
+                      isAnimationActive={!reducedMotion}
+                      type="monotone"
+                      dataKey="max"
+                      name="Máxima °C"
+                      stroke="#25d4a1"
+                      fill="#25d4a120"
+                    />
+                    <Area
+                      isAnimationActive={!reducedMotion}
+                      type="monotone"
+                      dataKey="min"
+                      name="Mínima °C"
+                      stroke="#4ca9ef"
+                      fill="#4ca9ef10"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+                <p className="source">
+                  Consulte condições e licença comercial da Open-Meteo antes de
+                  publicar o serviço.
+                </p>
+              </section>
+            </>
+          )}
+          {page === "El Niño / La Niña" && (
+            <>
+              <div className="enso-grid">
+                {enso("El Niño")}
+                {enso("La Niña")}
+              </div>
+              <section className="panel detail-panel">
+                <span className="tiny-badge">OBSERVAÇÃO ≠ PROJEÇÃO</span>
+                <h2>Entenda o que acontece no Pacífico</h2>
+                <p>
+                  O ENSO alterna entre El Niño, La Niña e neutralidade. A
+                  classificação depende de observações oceânicas e atmosféricas;
+                  as probabilidades futuras não são uma garantia.
+                </p>
+                <div className="info-grid">
+                  {[
+                    [
+                      "El Niño",
+                      "Aquecimento persistente do Pacífico equatorial. Os efeitos variam por região, estação e cultura.",
+                    ],
+                    [
+                      "La Niña",
+                      "Resfriamento persistente do Pacífico equatorial. Não ocorre como fase ativa simultânea ao El Niño.",
+                    ],
+                    [
+                      "Neutralidade",
+                      "Condições que não atendem aos critérios de uma das fases. Não significa ausência de eventos extremos.",
+                    ],
+                  ].map(([t, d]) => (
+                    <article key={t}>
+                      <Waves className="blue" />
+                      <h3>{t}</h3>
+                      <p>{d}</p>
+                    </article>
+                  ))}
+                </div>
+                <div className="empty-state">
+                  <Activity />
+                  <h3>Boletim atual ainda não conectado</h3>
+                  <p>
+                    A classificação, intensidade e probabilidades atuais não
+                    foram verificadas. Os cards acima são uma simulação visual.
+                  </p>
+                  <a
+                    className="primary"
+                    href="https://www.cpc.ncep.noaa.gov/products/analysis_monitoring/enso_advisory/ensodisc.shtml"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Consultar NOAA/CPC <ExternalLink size={14} />
+                  </a>
+                </div>
+              </section>
+            </>
+          )}
+          {page === "Alertas e riscos" && (
+            <>
+              <div className="stat-grid">
+                <div className="panel stat">
+                  <Bell className="green" />
+                  <b>{alerts.length}</b>
+                  <span>Alertas simulados</span>
+                </div>
+                <div className="panel stat">
+                  <ShieldCheck className="blue" />
+                  <b>{rules.filter((r) => r.active).length}</b>
+                  <span>Regras ativas de demonstração</span>
+                </div>
+                <div className="panel stat">
+                  <Send className="yellow" />
+                  <b>0</b>
+                  <span>Mensagens reais enviadas</span>
+                </div>
+              </div>
+              <section className="panel detail-panel">
+                <div className="panel-heading">
+                  <h3>Histórico de alertas</h3>
+                  <button
+                    className="primary"
+                    onClick={() => setModal("simulate")}
+                  >
+                    <FlaskConical size={15} /> Simular condição
+                  </button>
+                </div>
+                {alerts.length ? (
+                  alerts.map((a) => (
+                    <div className="alert-row" key={a.id}>
+                      <div className="risk-icon">
+                        <CloudRain />
+                      </div>
+                      <div>
+                        <span className="tiny-badge">
+                          PERSONALIZADO · SIMULAÇÃO
+                        </span>
+                        <h3>{a.title}</h3>
+                        <p>
+                          {a.mm} mm simulados · {a.date}
+                        </p>
+                        <p>{a.guidance}</p>
+                      </div>
+                      <button
+                        className="outline"
+                        onClick={() => setModal("whatsapp")}
+                      >
+                        Prévia <ArrowRight size={14} />
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <div className="empty-state">
+                    <ShieldCheck />
+                    <h3>Nenhum alerta registrado</h3>
+                    <p>
+                      Simule uma condição para testar as regras. Os avisos
+                      oficiais ainda não estão conectados.
+                    </p>
+                    <button
+                      className="outline"
+                      onClick={() => setModal("simulate")}
+                    >
+                      Testar uma regra
+                    </button>
+                  </div>
+                )}
+              </section>
+            </>
+          )}
+          {page === "Minhas propriedades" && (
+            <section className="panel detail-panel">
+              <div className="panel-heading">
+                <h3>Seu campo, em um só lugar</h3>
+                <button className="primary" onClick={() => setModal("farm")}>
+                  <Plus size={16} /> Nova propriedade
+                </button>
+              </div>
+              {farms.length ? (
+                <div className="info-grid">
+                  {farms.map((f) => (
+                    <article key={f.id}>
+                      <Tractor className="green" />
+                      <h3>{f.name}</h3>
+                      <p>
+                        <MapPin size={14} /> {f.city}
+                      </p>
+                      <p>
+                        {f.crop} · {f.stage}
+                      </p>
+                      <button
+                        className="text-button"
+                        onClick={() => {
+                          setFarms((x) => x.filter((v) => v.id !== f.id));
+                          setToast("Propriedade removida da demonstração");
+                        }}
+                      >
+                        Remover
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-state">
+                  <Tractor />
+                  <h3>O próximo capítulo começa na sua propriedade.</h3>
+                  <p>
+                    Cadastre sua primeira propriedade para personalizar esta
+                    demonstração.
+                  </p>
+                  <button className="primary" onClick={() => setModal("farm")}>
+                    Cadastrar propriedade <Plus size={15} />
+                  </button>
+                </div>
+              )}
+              <p className="source">
+                Cadastros armazenados apenas neste navegador. Não informe dados
+                pessoais sensíveis.
+              </p>
+            </section>
+          )}
+          {page === "Painel do agrônomo" && (
+            <>
+              <div className="admin-note">
+                <ShieldCheck size={18} /> Painel demonstrativo · autenticação e
+                aprovação profissional ainda não habilitadas.
+              </div>
+              <section className="panel detail-panel">
+                <div className="panel-heading">
+                  <h3>Regras de alerta preventivo</h3>
+                  <button
+                    className="primary"
+                    onClick={() => {
+                      setForm({
+                        ...initialRule,
+                        id: crypto.randomUUID(),
+                        city: city.name,
+                        crop,
+                      });
+                      setModal("rule");
+                    }}
+                  >
+                    <Plus size={16} /> Nova regra
+                  </button>
+                </div>
+                <p className="muted">
+                  Limites definidos pelo profissional para cada região e
+                  cultura.
+                </p>
+                {rules.map((r) => (
+                  <div className="rule-row" key={r.id}>
+                    <div className="risk-icon">
+                      <CloudRain />
+                    </div>
+                    <div>
+                      <h3>{r.name}</h3>
+                      <p>
+                        {r.city} · {r.crop} · ≥ {r.threshold} mm em {r.hours}h
+                      </p>
+                      <small>{r.guidance}</small>
+                    </div>
+                    <button
+                      className={"toggle " + (r.active ? "on" : "")}
+                      aria-label={r.active ? "Desativar regra" : "Ativar regra"}
+                      onClick={() =>
+                        setRules((rs) =>
+                          rs.map((x) =>
+                            x.id === r.id ? { ...x, active: !x.active } : x,
+                          ),
+                        )
+                      }
+                    >
+                      <span />
+                    </button>
+                    <button
+                      className="outline"
+                      onClick={() => {
+                        setForm(r);
+                        setModal("rule");
+                      }}
+                    >
+                      Editar
+                    </button>
+                  </div>
+                ))}
+              </section>
+              <section className="panel detail-panel">
+                <h3>Motor de automação</h3>
+                <div className="flow">
+                  <div>
+                    <CloudSun />
+                    Fontes oficiais<small>Adaptadores</small>
+                  </div>
+                  <ArrowRight />
+                  <div>
+                    <Activity />
+                    Worker Node.js<small>BullMQ + Redis</small>
+                  </div>
+                  <ArrowRight />
+                  <div>
+                    <SlidersHorizontal />
+                    Regras agronômicas<small>Avaliação e deduplicação</small>
+                  </div>
+                  <ArrowRight />
+                  <div>
+                    <Send />
+                    Notificações<small>Sandbox padrão</small>
+                  </div>
+                </div>
+                <p className="source">
+                  Infraestrutura inicial preparada no repositório. Este painel
+                  não indica execução de jobs de produção.
+                </p>
+                <button
+                  className="outline"
+                  onClick={() => setModal("simulate")}
+                >
+                  Testar fluxo demonstrativo <FlaskConical size={15} />
+                </button>
+              </section>
+            </>
+          )}
+          {page === "Atualizações" && (
+            <section className="panel detail-panel">
+              <h3>Central de fontes oficiais</h3>
+              <p className="muted">
+                Links de referência. Nenhum boletim atual foi importado ou
+                atribuído automaticamente às instituições.
+              </p>
+              <div className="info-grid">
+                {[
+                  [
+                    "NOAA / CPC",
+                    "Discussões oficiais e monitoramento ENSO",
+                    "https://www.cpc.ncep.noaa.gov/",
+                  ],
+                  [
+                    "INMET",
+                    "Avisos meteorológicos brasileiros",
+                    "https://avisos.inmet.gov.br/",
+                  ],
+                  [
+                    "CEMADEN",
+                    "Monitoramento de riscos e desastres",
+                    "https://www.gov.br/cemaden/",
+                  ],
+                  [
+                    "Defesa Civil",
+                    "Proteção e defesa civil",
+                    "https://www.gov.br/mdr/",
+                  ],
+                  [
+                    "CONAB",
+                    "Acompanhamento de safras",
+                    "https://www.conab.gov.br/",
+                  ],
+                  [
+                    "IBGE",
+                    "Municípios e informações territoriais",
+                    "https://www.ibge.gov.br/",
+                  ],
+                ].map(([t, d, url]) => (
+                  <a href={url} target="_blank" rel="noreferrer" key={t}>
+                    <Newspaper className="blue" />
+                    <h3>{t}</h3>
+                    <p>{d}</p>
+                    <span className="text-button">
+                      Acessar instituição <ExternalLink size={14} />
+                    </span>
+                  </a>
+                ))}
+              </div>
+            </section>
+          )}
+          {page === "Configurações" && (
+            <section className="panel detail-panel settings">
+              <h3>Preferências de demonstração</h3>
+              <div className="setting-row">
+                <div>
+                  <h4>Prévia de notificações WhatsApp</h4>
+                  <p>Permitir testar mensagens no sandbox, sem envio real.</p>
+                </div>
+                <button
+                  aria-label="Alterar consentimento sandbox"
+                  className={"toggle " + (consent ? "on" : "")}
+                  onClick={() => setConsent(!consent)}
+                >
+                  <span />
+                </button>
+              </div>
+              <div className="setting-row">
+                <div>
+                  <h4>Armazenamento local</h4>
+                  <p>
+                    Propriedades, regras e eventos ficam apenas neste navegador.
+                  </p>
+                </div>
+                <button className="outline" onClick={() => setModal("reset")}>
+                  Limpar demonstração
+                </button>
+              </div>
+              <div className="empty-state">
+                <ShieldCheck />
+                <h3>Integrações de produção não configuradas</h3>
+                <p>
+                  Autenticação, banco compartilhado e WhatsApp real dependem da
+                  próxima etapa de implementação e configuração segura do
+                  servidor.
+                </p>
+              </div>
+            </section>
+          )}
+          <footer>
+            <span>
+              <Sprout size={13} /> AgroNiño{" "}
+              <span className="muted">· Inteligência para o seu campo</span>
+            </span>
+            <span>Feito para quem cultiva o amanhã.</span>
+          </footer>
+        </main>
+      </div>
+      {toast && (
+        <div className="toast">
+          <Check size={18} />
+          {toast}
+          <button onClick={() => setToast("")}>
+            <X size={15} />
+          </button>
+        </div>
+      )}
+      {modal && (
+        <div className="modal-backdrop" onClick={() => setModal(null)}>
+          <section
+            className={"modal " + (modal === "map" ? "wide" : "")}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              className="close icon-button"
+              onClick={() => setModal(null)}
+              aria-label="Fechar"
+            >
+              <X />
+            </button>
+            {modal === "demo" && (
+              <>
+                <FlaskConical className="green" size={30} />
+                <h2>Explore com tranquilidade</h2>
+                <p>
+                  ENSO, previsão inicial e simulações usam dados fictícios. A
+                  previsão consultada pelo botão “Consultar dados reais” vem da
+                  Open-Meteo. O mapa usa OpenStreetMap, sem camada artificial de
+                  risco.
+                </p>
+                <p>
+                  Cadastros ficam no navegador e nenhuma mensagem real é
+                  enviada.
+                </p>
+                <button className="primary" onClick={() => setModal(null)}>
+                  Entendi <Check size={15} />
+                </button>
+              </>
+            )}
+            {modal === "farm" && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  setFarms((f) => [
+                    ...f,
+                    { ...farmForm, id: crypto.randomUUID() },
+                  ]);
+                  setModal(null);
+                  setFarmForm({ ...farmForm, name: "" });
+                  setToast("Propriedade cadastrada nesta demonstração");
+                }}
+              >
+                <div className="eyebrow">MEU ESPAÇO</div>
+                <h2>Nova propriedade</h2>
+                <p>Personalize seu acompanhamento no campo.</p>
+                <label>
+                  Nome da propriedade
+                  <input
+                    required
+                    minLength={2}
+                    maxLength={100}
+                    placeholder="Ex.: Fazenda Boa Esperança"
+                    value={farmForm.name}
+                    onChange={(e) =>
+                      setFarmForm({ ...farmForm, name: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  Município
+                  <select
+                    value={farmForm.city}
+                    onChange={(e) =>
+                      setFarmForm({ ...farmForm, city: e.target.value })
+                    }
+                  >
+                    {cities.map((c) => (
+                      <option key={c.name}>{c.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <div className="form-grid">
+                  <label>
+                    Cultura
+                    <select
+                      value={farmForm.crop}
+                      onChange={(e) =>
+                        setFarmForm({ ...farmForm, crop: e.target.value })
+                      }
+                    >
+                      {[
+                        "Soja",
+                        "Milho",
+                        "Café",
+                        "Feijão",
+                        "Arroz",
+                        "Pastagem",
+                        "Outras",
+                      ].map((x) => (
+                        <option key={x}>{x}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Fase da lavoura
+                    <select
+                      value={farmForm.stage}
+                      onChange={(e) =>
+                        setFarmForm({ ...farmForm, stage: e.target.value })
+                      }
+                    >
+                      {[
+                        "Plantio",
+                        "Crescimento",
+                        "Floração",
+                        "Enchimento de grãos",
+                        "Colheita",
+                      ].map((x) => (
+                        <option key={x}>{x}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <p className="source">
+                  Localidades de demonstração. Catálogo IBGE disponível no
+                  endpoint /api/municipalities.
+                </p>
+                <button className="primary" type="submit">
+                  Salvar propriedade <Check size={16} />
+                </button>
+              </form>
+            )}
+            {modal === "rule" && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  setRules((rs) =>
+                    rs.some((r) => r.id === form.id)
+                      ? rs.map((r) => (r.id === form.id ? form : r))
+                      : [...rs, form],
+                  );
+                  setModal(null);
+                  setToast("Regra demonstrativa salva");
+                }}
+              >
+                <div className="eyebrow">PAINEL DO AGRÔNOMO</div>
+                <h2>
+                  {rules.some((r) => r.id === form.id)
+                    ? "Editar regra"
+                    : "Nova regra de alerta"}
+                </h2>
+                <label>
+                  Tipo de risco
+                  <select
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  >
+                    <option>Chuva excessiva</option>
+                  </select>
+                </label>
+                <div className="form-grid">
+                  <label>
+                    Município
+                    <select
+                      value={form.city}
+                      onChange={(e) =>
+                        setForm({ ...form, city: e.target.value })
+                      }
+                    >
+                      {cities.map((c) => (
+                        <option key={c.name}>{c.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Cultura
+                    <select
+                      value={form.crop}
+                      onChange={(e) =>
+                        setForm({ ...form, crop: e.target.value })
+                      }
+                    >
+                      {[
+                        "Soja",
+                        "Milho",
+                        "Café",
+                        "Feijão",
+                        "Arroz",
+                        "Pastagem",
+                      ].map((x) => (
+                        <option key={x}>{x}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Chuva acumulada (mm)
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      max="3000"
+                      value={form.threshold}
+                      onChange={(e) =>
+                        setForm({ ...form, threshold: +e.target.value })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Período (horas)
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      max="384"
+                      value={form.hours}
+                      onChange={(e) =>
+                        setForm({ ...form, hours: +e.target.value })
+                      }
+                    />
+                  </label>
+                </div>
+                <label>
+                  Orientação preventiva
+                  <textarea
+                    required
+                    minLength={10}
+                    value={form.guidance}
+                    onChange={(e) =>
+                      setForm({ ...form, guidance: e.target.value })
+                    }
+                  />
+                </label>
+                <p className="source">
+                  Regra de demonstração. Uso real exige validação de
+                  profissional autorizado.
+                </p>
+                <button className="primary" type="submit">
+                  Salvar regra <Check size={15} />
+                </button>
+              </form>
+            )}
+            {modal === "simulate" && (
+              <>
+                <FlaskConical className="green" />
+                <h2>Simular chuva excessiva</h2>
+                <p>
+                  Teste as regras ativas para {crop} em {city.name}. Os valores
+                  são fictícios e não geram envios.
+                </p>
+                <label>
+                  Acumulado simulado (mm)
+                  <input
+                    type="number"
+                    min="0"
+                    max="2000"
+                    value={simulation}
+                    onChange={(e) =>
+                      setSimulation(Math.max(0, +e.target.value))
+                    }
+                  />
+                </label>
+                <p className="source">
+                  A repetição da mesma regra no mesmo dia não cria alertas
+                  duplicados.
+                </p>
+                <button className="primary" onClick={simulate}>
+                  Executar simulação <ArrowRight size={15} />
+                </button>
+              </>
+            )}
+            {modal === "whatsapp" && (
+              <>
+                <span className="tiny-badge">SANDBOX · NENHUM ENVIO REAL</span>
+                <h2>Prévia no WhatsApp</h2>
+                <div className="whatsapp">
+                  <div className="wa-head">
+                    <span className="brand-icon">
+                      <Sprout />
+                    </span>
+                    <div>
+                      <b>
+                        AgroNiño <ShieldCheck size={13} />
+                      </b>
+                      <small>Alertas e atualizações</small>
+                    </div>
+                  </div>
+                  <div className="wa-bubble">
+                    <b>🌱 AgroNiño — Alerta preventivo</b>
+                    <p>
+                      📍 {city.name} – {city.uf}
+                    </p>
+                    <p>🌧️ Chuva excessiva · {crop}</p>
+                    <p>
+                      Condição simulada: {alerts[0]?.mm ?? simulation} mm,
+                      conforme regra cadastrada.
+                    </p>
+                    <p>
+                      <b>Orientação:</b>{" "}
+                      {alerts[0]?.guidance ?? initialRule.guidance}
+                    </p>
+                    <small>DADOS FICTÍCIOS · Demonstração</small>
+                    <time>agora ✓✓</time>
+                  </div>
+                </div>
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={consent}
+                    onChange={(e) => setConsent(e.target.checked)}
+                  />{" "}
+                  Autorizar teste no sandbox local
+                </label>
+                <button
+                  className="primary"
+                  disabled={!consent}
+                  onClick={() => {
+                    setToast(
+                      "Prévia validada no sandbox. Nenhuma chamada à Meta foi realizada.",
+                    );
+                    setModal(null);
+                  }}
+                >
+                  <Check size={15} /> Validar prévia
+                </button>
+              </>
+            )}
+            {modal === "map" && (
+              <>
+                <h2>
+                  {city.name}, {city.uf}
+                </h2>
+                <p>
+                  Cartografia municipal de referência · sem camada meteorológica
+                  de risco.
+                </p>
+                <div style={{ height: 450 }}>
+                  <RegionMap lat={city.lat} lon={city.lon} name={city.name} />
+                </div>
+              </>
+            )}
+            {modal === "reset" && (
+              <>
+                <h2>Limpar dados de demonstração?</h2>
+                <p>
+                  Remove propriedades e eventos salvos neste navegador e
+                  restaura a regra inicial.
+                </p>
+                <button
+                  className="primary"
+                  onClick={() => {
+                    setRules([initialRule]);
+                    setFarms([]);
+                    setAlerts([]);
+                    setConsent(false);
+                    setModal(null);
+                    setToast("Demonstração restaurada");
+                  }}
+                >
+                  Limpar e restaurar
+                </button>
+              </>
+            )}
+          </section>
+        </div>
+      )}
+    </div>
+  );
 }

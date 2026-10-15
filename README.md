@@ -16,13 +16,13 @@ A aplicação escuta na porta 3000. `npm run build` gera a distribuição e `npm
 ## O que funciona nesta versão
 
 - Dashboard, navegação, seleção entre quatro localidades de referência e seis culturas.
-- Mapa Leaflet / OpenStreetMap, sem camada de risco fabricada.
+- Mapa Leaflet com limites municipais reais de referência, destaque do município selecionado e navegação animada. A camada local funciona sem acesso a serviços externos; a camada opcional de ruas usa OpenStreetMap. Sem camada de risco fabricada.
 - Cadastro de propriedades, edição e ativação de regras de chuva, histórico de alertas e consentimento sandbox em localStorage.
 - Simulação de acumulado de chuva, deduplicação por regra/município/dia e prévia WhatsApp sem envio.
 - Consulta meteorológica no servidor via `GET /api/weather?lat=...&lon=...`, cache de 30 minutos, timeout, coordenadas validadas e erros explícitos. A página de previsão permite solicitar dados reais.
 - Catálogo IBGE no servidor via `GET /api/municipalities?uf=MT`, cache de 24 horas. A seleção visual ainda usa quatro localidades fixas; não confundir com catálogo nacional integrado.
 
-Os cards ENSO, preços e previsão inicial são fictícios e identificados como demonstração. Nenhum boletim atual da NOAA foi importado. Os links das instituições são fontes de referência, não integrações de ingestão ativas. O armazenamento do navegador não é um banco compartilhado nem autenticação; não cadastre dados sensíveis.
+Os cards ENSO e previsão inicial são fictícios e identificados como demonstração. Nenhum boletim atual da NOAA foi importado. Os links das instituições são fontes de referência, não integrações de ingestão ativas. O armazenamento do navegador não é um banco compartilhado nem autenticação; não cadastre dados sensíveis.
 
 ## Infraestrutura inicial, ainda não integrada à interface
 
@@ -45,7 +45,7 @@ WhatsApp real ainda não implementado. A etapa futura exigirá aplicativo Meta, 
 
 ## Antes de produção
 
-Veja [plano de desenvolvimento](docs/IMPLEMENTATION.md). Autenticação, autorização por organização, banco integrado, auditoria, notificações, backups e revisão profissional são pendentes. Verificar licença comercial Open-Meteo, direitos das cotações e política de tiles OpenStreetMap antes da publicação comercial. Não utilizar a demonstração para decisões meteorológicas, financeiras ou operações agrícolas.
+Veja [plano de desenvolvimento](docs/IMPLEMENTATION.md). Autenticação, autorização por organização, banco integrado, auditoria, notificações, backups e revisão profissional são pendentes. Verificar licença comercial Open-Meteo e política de tiles OpenStreetMap antes da publicação comercial. Não utilizar a demonstração para decisões meteorológicas ou operações agrícolas.
 
 ## Testes de navegador
 
@@ -55,3 +55,9 @@ npm run test:e2e
 ```
 
 Se já houver Chromium no sistema, use `CHROMIUM_PATH=/usr/bin/chromium npm run test:e2e`. Os testes criam dados apenas no contexto isolado do navegador. Validam cadastro, persistência local, simulação, deduplicação e largura móvel.
+
+## Interface e cartografia
+
+O módulo de economia e preços foi removido do escopo. O dashboard apresenta um panorama de precipitação com gráfico animado. Animações respeitam a preferência de movimento reduzido do sistema.
+
+O mapa abre em Sorriso/MT como exemplo e acompanha a seleção de município. A cor verde indica a seleção geográfica, nunca risco climático. A camada Território inclui geometrias IBGE distribuídas por Geodata BR (CC0), com fonte e limitações em `public/maps/SOURCES.md`. A data de atualização dos limites não é garantida. A camada Ruas depende da disponibilidade e das políticas de acesso do OpenStreetMap.
