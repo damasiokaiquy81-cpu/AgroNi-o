@@ -1,0 +1,6 @@
+import { NextRequest, NextResponse } from 'next/server';
+export async function GET(request:NextRequest) {
+ const lat=Number(request.nextUrl.searchParams.get('lat')),lon=Number(request.nextUrl.searchParams.get('lon'));
+ if(!request.nextUrl.searchParams.has('lat')||!request.nextUrl.searchParams.has('lon')||!Number.isFinite(lat)||!Number.isFinite(lon)||Math.abs(lat)>90||Math.abs(lon)>180) return NextResponse.json({error:'Coordenadas inválidas'},{status:400});
+ try { const url=new URL('https://api.open-meteo.com/v1/forecast'); url.search=new URLSearchParams({latitude:String(lat),longitude:String(lon),daily:'temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max',hourly:'temperature_2m,precipitation,relative_humidity_2m,wind_speed_10m,wind_gusts_10m',current:'temperature_2m,relative_humidity_2m,wind_speed_10m',timezone:'auto',forecast_days:'7'}).toString(); const res=await fetch(url,{next:{revalidate:1800},signal:AbortSignal.timeout(10000)}); if(!res.ok)throw Error('Fonte indisponível');return NextResponse.json({mode:'live',source:'Open-Meteo',retrievedAt:new Date().toISOString(),data:await res.json()}); } catch { return NextResponse.json({error:'Não foi possível consultar a previsão. Tente novamente mais tarde.'},{status:502}); }
+}

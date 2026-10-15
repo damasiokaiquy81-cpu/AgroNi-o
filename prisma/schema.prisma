@@ -1,0 +1,61 @@
+generator client {
+ provider = "prisma-client-js"
+}
+datasource db {
+ provider = "postgresql"
+ url = env("DATABASE_URL")
+}
+model Organization {
+ id String @id @default(cuid())
+ name String
+ users User[]
+ properties Property[]
+ rules AlertRule[]
+ events AlertEvent[]
+}
+model User {
+ id String @id @default(cuid())
+ organizationId String
+ organization Organization @relation(fields:[organizationId],references:[id])
+ email String @unique
+ passwordHash String
+ role String @default("PRODUCER")
+ createdAt DateTime @default(now())
+ @@index([organizationId])
+}
+model Property {
+ id String @id @default(cuid())
+ organizationId String
+ organization Organization @relation(fields:[organizationId],references:[id])
+ name String
+ municipalityCode String
+ latitude Float?
+ longitude Float?
+ crop String
+ stage String
+ @@index([organizationId,municipalityCode])
+}
+model AlertRule {
+ id String @id @default(cuid())
+ organizationId String
+ organization Organization @relation(fields:[organizationId],references:[id])
+ type String
+ municipalityCode String
+ crop String
+ threshold Float
+ hours Int
+ guidance String
+ active Boolean @default(false)
+ updatedAt DateTime @updatedAt
+ @@index([organizationId,active])
+}
+model AlertEvent {
+ id String @id @default(cuid())
+ organizationId String
+ organization Organization @relation(fields:[organizationId],references:[id])
+ deduplicationKey String @unique
+ payload Json
+ simulated Boolean @default(true)
+ createdAt DateTime @default(now())
+ @@index([organizationId,createdAt])
+}

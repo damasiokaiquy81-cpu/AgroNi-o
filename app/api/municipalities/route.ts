@@ -1,0 +1,2 @@
+import {NextRequest,NextResponse} from 'next/server';
+export async function GET(req:NextRequest){const uf=req.nextUrl.searchParams.get('uf')||'MT';if(!/^[A-Z]{2}$/.test(uf))return NextResponse.json({error:'UF inválida'},{status:400});try{const r=await fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${uf}/municipios?orderBy=nome`,{next:{revalidate:86400},signal:AbortSignal.timeout(10000)});if(!r.ok)throw Error();return NextResponse.json(await r.json());}catch{return NextResponse.json({error:'IBGE indisponível'},{status:502});}}
